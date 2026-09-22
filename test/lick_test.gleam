@@ -41,7 +41,7 @@ fn first_tone(segment: lick.Segment) -> Result(pitch.Pitch, Nil) {
   segment.events
   |> list.filter_map(fn(event) {
     case event {
-      lick.Tone(note, _) -> Ok(note)
+      lick.Tone(note, _, _) -> Ok(note)
       lick.Rest(_) -> Error(Nil)
     }
   })
@@ -54,7 +54,7 @@ fn silence(subject: lick.Line) -> Int {
   |> list.fold(0, fn(total, event) {
     case event {
       lick.Rest(beats) -> total + beats
-      lick.Tone(_, _) -> total
+      lick.Tone(_, _, _) -> total
     }
   })
 }
@@ -116,7 +116,7 @@ pub fn rests_are_never_empty_test() {
         list.each(segment.events, fn(event) {
           let beats = case event {
             lick.Rest(length) -> length
-            lick.Tone(_, length) -> length
+            lick.Tone(_, length, _) -> length
           }
           assert beats > 0
         })
@@ -178,7 +178,7 @@ fn chorus(level: lick.Level, seed: Int) -> lick.Line {
 fn tones(segment: lick.Segment) -> List(pitch.Pitch) {
   list.filter_map(segment.events, fn(event) {
     case event {
-      lick.Tone(note, _) -> Ok(note)
+      lick.Tone(note, _, _) -> Ok(note)
       lick.Rest(_) -> Error(Nil)
     }
   })
@@ -279,26 +279,96 @@ pub fn a_figure_is_not_run_into_the_ground_test() {
   })
 }
 
+fn sounded(subject: lick.Line) -> List(lick.Event) {
+  subject.segments
+  |> list.flat_map(fn(one) { one.events })
+  |> list.filter(fn(event) {
+    case event {
+      lick.Tone(_, _, _) -> True
+      lick.Rest(_) -> False
+    }
+  })
+}
+
+fn choruses() -> List(lick.Line) {
+  [lick.Beginner, lick.Intermediate, lick.Advanced]
+  |> list.flat_map(fn(level) {
+    [1, 2, 3, 4, 5, 6, 7, 8] |> list.map(fn(seed) { chorus(level, seed) })
+  })
+}
+
 pub fn the_line_does_not_stutter_test() {
   // Two of the same note in a row reads as a mistake rather than as anything.
-  // It cannot be ruled out entirely, but it has to stay rare.
+  // A tie is the exception, and the whole point: that pair is one note held,
+  // not the same note twice.
   let #(stutters, total) =
-    [lick.Beginner, lick.Intermediate, lick.Advanced]
-    |> list.flat_map(fn(level) {
-      [1, 2, 3, 4, 5, 6, 7, 8] |> list.map(fn(seed) { chorus(level, seed) })
-    })
+    choruses()
     |> list.fold(#(0, 0), fn(state, one) {
       let #(bad, seen) = state
-      let notes = lick.pitches(one)
+      let notes = sounded(one)
       let repeats =
         pairs(notes)
         |> list.count(fn(pair) {
-          pitch.to_midi(pair.0) == pitch.to_midi(pair.1)
+          case pair {
+            #(lick.Tone(before, _, False), lick.Tone(after, _, _)) ->
+              pitch.to_midi(before) == pitch.to_midi(after)
+            _ -> False
+          }
         })
       #(bad + repeats, seen + list.length(notes))
     })
   assert total > 1000
   assert stutters * 100 < total
+}
+
+pub fn a_tie_is_held_rather_than_played_again_test() {
+  // An anticipation is only an anticipation if the note carries over. A tie
+  // into a different note would just be wrong.
+  let checked =
+    choruses()
+    |> list.flat_map(fn(one) { pairs(sounded(one)) })
+    |> list.filter(fn(pair) {
+      case pair.0 {
+        lick.Tone(_, _, held) -> held
+        lick.Rest(_) -> False
+      }
+    })
+  list.each(checked, fn(pair) {
+    let assert #(lick.Tone(before, _, _), lick.Tone(after, _, _)) = pair
+    assert pitch.to_midi(before) == pitch.to_midi(after)
+  })
+  // And it has to actually be happening.
+  assert list.length(checked) > 20
+}
+
+pub fn a_tie_never_hangs_off_the_end_test() {
+  // Nothing to hold into means nothing to tie to.
+  list.each(choruses(), fn(one) {
+    let assert Ok(final) = list.last(sounded(one))
+    let assert lick.Tone(_, _, held) = final
+    assert !held
+  })
+}
+
+pub fn the_line_leans_on_notes_test() {
+  // Not everything is an eighth note, and a beginner leans more often than
+  // somebody who has the eighths to spare.
+  let held = fn(level) {
+    [1, 2, 3, 4, 5, 6, 7, 8]
+    |> list.map(fn(seed) {
+      sounded(chorus(level, seed))
+      |> list.count(fn(event) {
+        case event {
+          lick.Tone(_, beats, _) -> beats > 1
+          lick.Rest(_) -> False
+        }
+      })
+    })
+    |> list.fold(0, fn(total, one) { total + one })
+  }
+  assert held(lick.Beginner) > 0
+  assert held(lick.Advanced) > 0
+  assert held(lick.Beginner) > held(lick.Advanced)
 }
 
 pub fn transposing_a_line_is_reversible_test() {

@@ -44,6 +44,8 @@ pub type Event {
     chord: Option(String),
     annotation: Option(String),
     beam: Beam,
+    /// Held into the note after it rather than played again.
+    tied: Bool,
   )
   Rest(duration: Int, chord: Option(String), annotation: Option(String))
   /// Time that passes without a printed note, for chord charts.
@@ -151,8 +153,8 @@ pub fn from_line(
           _ -> None
         }
         case event {
-          lick.Tone(note, length) ->
-            Note(note, length, None, label, None, Alone)
+          lick.Tone(note, length, held) ->
+            Note(note, length, None, label, None, Alone, held)
           lick.Rest(length) -> Rest(length, label, None)
         }
       })
@@ -232,6 +234,7 @@ fn plain(
       list.key_find(chords, at) |> option.from_result,
       None,
       Alone,
+      False,
     )
   })
 }

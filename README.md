@@ -118,6 +118,14 @@ stops before its end, and the gap is real silence: an approach note never runs
 across it, because whatever comes out of a rest is a target rather than the
 tail of the figure before it.
 
+Not everything is an eighth note. The line leans on a note here and there, and
+it arrives on the next chord early and holds over the bar line — the tie is
+what makes that an anticipation rather than the same note played twice, and it
+is about as characteristic of the idiom as anything. What is not here is
+triplets: they need a grid divisible by three rather than the eighths
+everything is counted in, and a tuplet of its own in the score, which is a
+piece of work rather than a setting.
+
 Figures come back. A shape is kept as how far each step sits from the one it
 started on, counted in steps of the scale or the arpeggio rather than in
 semitones, so replaying it from a new target over a new chord gives the same

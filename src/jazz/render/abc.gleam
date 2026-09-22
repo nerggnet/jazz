@@ -89,11 +89,16 @@ fn gap(one: Event) -> String {
 
 fn event(one: Event) -> String {
   case one {
-    Note(note, duration, accidental, chord, annotation, _) ->
+    Note(note, duration, accidental, chord, annotation, _, tied) ->
       decorations(chord, annotation)
       <> accidental_mark(accidental)
       <> note_name(note)
       <> length(duration)
+      // A hyphen after a note ties it to the next one of the same pitch.
+      <> case tied {
+        True -> "-"
+        False -> ""
+      }
     Rest(duration, chord, annotation) ->
       decorations(chord, annotation) <> "z" <> length(duration)
     Spacer(duration, chord, annotation) ->

@@ -110,7 +110,15 @@ pub fn a_held_note_does_not_beam_test() {
   let assert Ok(last) =
     list.last(notation.events(scale_score(PitchClass(C, 0), scale.Ionian)))
   assert last
-    == notation.Note(pitch.note(C, 0, 4), 2, None, None, None, notation.Alone)
+    == notation.Note(
+      pitch.note(C, 0, 4),
+      2,
+      None,
+      None,
+      None,
+      notation.Alone,
+      False,
+    )
 }
 
 // --- Spelling ----------------------------------------------------------------

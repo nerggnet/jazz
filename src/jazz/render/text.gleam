@@ -406,7 +406,7 @@ fn lick_rows(
       let length =
         list.fold(one.events, 0, fn(total, event) {
           case event {
-            lick.Tone(_, beats) -> total + beats
+            lick.Tone(_, beats, _) -> total + beats
             lick.Rest(beats) -> total + beats
           }
         })
@@ -414,11 +414,22 @@ fn lick_rows(
         one.events
         |> list.map(fn(event) {
           case event {
-            lick.Tone(note, _) ->
-              string.pad_end(pitch.class_to_string(note.class), 3, " ")
+            // A note spans its own cell plus one for each extra eighth it
+            // is held, and a tie says the next one is the same note again.
+            lick.Tone(note, beats, held) ->
+              string.pad_end(
+                pitch.class_to_string(note.class)
+                  <> case held {
+                  True -> "~"
+                  False -> ""
+                },
+                4,
+                " ",
+              )
+              <> string.repeat(string.pad_end(".", 4, " "), beats - 1)
             // One dash an eighth, so the columns still line up through a rest.
             lick.Rest(beats) ->
-              string.repeat(string.pad_end("-", 3, " "), beats)
+              string.repeat(string.pad_end("-", 4, " "), beats)
           }
         })
         |> string.concat

@@ -38,7 +38,8 @@ import jazz/scale
 pub const bar = 8
 
 pub type Event {
-  Tone(pitch: Pitch, duration: Int)
+  /// A tied note is held into the one after it rather than played again.
+  Tone(pitch: Pitch, duration: Int, tied: Bool)
   Rest(duration: Int)
 }
 
@@ -67,6 +68,9 @@ pub type Approach {
   DoubleChromaticBelow
   EnclosureAboveBelow
   EnclosureBelowAbove
+  /// Arrive on the next chord before it does, and hold the note over the bar
+  /// line. The most characteristic rhythm in the idiom.
+  Anticipate
 }
 
 /// What fills the space between one target and the next.
@@ -287,6 +291,7 @@ fn fill_all(
           next,
           settings,
           carry,
+          at + played.from,
           generator,
         )
       fill_all(rest, later, windows, settings, generator, at + length, carry, [
@@ -307,6 +312,7 @@ fn fill(
   next: Option(Pitch),
   settings: Options,
   carry: Echo,
+  start: Int,
   generator: Random,
 ) -> #(Segment, Random, Echo) {
   case int.max(0, played.until - played.from) {
@@ -324,6 +330,7 @@ fn fill(
         next,
         settings,
         carry,
+        start,
         generator,
       )
   }
@@ -339,6 +346,7 @@ fn sound(
   next: Option(Pitch),
   settings: Options,
   carry: Echo,
+  start: Int,
   generator: Random,
 ) -> #(Segment, Random, Echo) {
   let tones = scale_pitches(current, settings)
@@ -359,15 +367,36 @@ fn sound(
   let #(figure, generator) =
     choose_figure(slots, next, direction, settings, carry, generator)
 
-  let approach = build_approach(arrival(figure.shape, next), next, tones)
+  let landing = arrival(figure.shape, next)
+  let approach = build_approach(landing, next, tones)
+
+  // The approach notes are always eighths; what is left is the room the
+  // figure itself has to fill, and the rhythm says how many notes that is.
+  let #(lengths, generator) =
+    rhythm(
+      start,
+      slots - approach_length(landing),
+      settings.level,
+      generator,
+      [],
+    )
   let body =
-    replay(figure.shape, figure.body, tones, arpeggio, target)
+    replay(
+      figure.shape,
+      int.max(0, list.length(lengths) - 1),
+      tones,
+      arpeggio,
+      target,
+    )
     |> mend(approach, rungs_of(figure.shape, tones, arpeggio), direction)
 
-  let notes =
-    [target, ..body]
-    |> list.append(approach)
-    |> list.map(fn(one) { Tone(one, 1) })
+  let melody =
+    list.zip([target, ..body], lengths)
+    |> list.map(fn(one) { Tone(one.0, one.1, False) })
+  let arriving =
+    list.map(approach, fn(one) { Tone(one, 1, landing == Anticipate) })
+
+  let notes = list.append(melody, arriving)
 
   let after = length - played.until
   let events = list.flatten([silence(played.from), notes, silence(after)])
@@ -377,7 +406,7 @@ fn sound(
       chord: current,
       events: events,
       target: label,
-      device: describe(figure)
+      device: describe(figure, landing)
         <> case after > 0 {
         True -> ", then a breath"
         False -> ""
@@ -402,13 +431,15 @@ fn silence(length: Int) -> List(Event) {
 
 fn approaches(level: Level) -> List(Approach) {
   case level {
-    Beginner -> [Direct, Direct, ChromaticBelow]
+    Beginner -> [Direct, Direct, ChromaticBelow, Anticipate]
     Intermediate -> [
       Direct,
       ChromaticBelow,
       ChromaticAbove,
       DiatonicAbove,
       EnclosureAboveBelow,
+      Anticipate,
+      Anticipate,
     ]
     Advanced -> [
       ChromaticBelow,
@@ -416,6 +447,8 @@ fn approaches(level: Level) -> List(Approach) {
       DoubleChromaticBelow,
       EnclosureAboveBelow,
       EnclosureBelowAbove,
+      Anticipate,
+      Anticipate,
     ]
   }
 }
@@ -466,7 +499,7 @@ fn target_class(
 fn approach_length(approach: Approach) -> Int {
   case approach {
     Direct -> 0
-    ChromaticBelow | ChromaticAbove | DiatonicAbove -> 1
+    ChromaticBelow | ChromaticAbove | DiatonicAbove | Anticipate -> 1
     DoubleChromaticBelow | EnclosureAboveBelow | EnclosureBelowAbove -> 2
   }
 }
@@ -481,6 +514,9 @@ fn build_approach(
     Some(target) ->
       case approach {
         Direct -> []
+        // The note itself, early: the tie is what makes it an anticipation
+        // rather than the same note played twice.
+        Anticipate -> [target]
         ChromaticBelow -> [semitone_below(target)]
         ChromaticAbove -> [semitone_above(target)]
         DiatonicAbove -> [step_from(tones, target, 1)]
@@ -517,6 +553,44 @@ type Echo {
 /// A figure decided on, sized to the room available.
 type Figure {
   Figure(shape: Shape, body: Int, repeated: Bool)
+}
+
+/// How long each note of a figure lasts, in eighths, summing to the room
+/// available.
+///
+/// Mostly eighths, which is what the idiom is made of, with the occasional
+/// quarter for the line to lean on. A note longer than an eighth has to start
+/// on a beat or it cannot be written down without tying it to something.
+fn rhythm(
+  from: Int,
+  room: Int,
+  level: Level,
+  generator: Random,
+  acc: List(Int),
+) -> #(List(Int), Random) {
+  case room <= 0 {
+    True -> #(list.reverse(acc), generator)
+    False ->
+      case room >= 2 && { from % 2 } == 0 {
+        False -> rhythm(from + 1, room - 1, level, generator, [1, ..acc])
+        True -> {
+          let #(hold, generator) = random.chance(generator, leaning(level))
+          case hold {
+            True -> rhythm(from + 2, room - 2, level, generator, [2, ..acc])
+            False -> rhythm(from + 1, room - 1, level, generator, [1, ..acc])
+          }
+        }
+      }
+  }
+}
+
+/// How readily a level leans on a note instead of running eighths.
+fn leaning(level: Level) -> Int {
+  case level {
+    Beginner -> 30
+    Intermediate -> 18
+    Advanced -> 10
+  }
 }
 
 /// How often a level answers a figure with itself.
@@ -726,7 +800,7 @@ fn wrap(index: Int, size: Int, octave: Int, tries: Int) -> Int {
   }
 }
 
-fn describe(figure: Figure) -> String {
+fn describe(figure: Figure, landing: Approach) -> String {
   let filling = case figure.repeated {
     True -> "the same shape again"
     False ->
@@ -737,7 +811,7 @@ fn describe(figure: Figure) -> String {
         ChordTonesDown -> "chord tones down"
       }
   }
-  let landing = case figure.shape.approach {
+  let arrived = case landing {
     Direct -> ""
     ChromaticBelow -> ", chromatic from below"
     ChromaticAbove -> ", chromatic from above"
@@ -745,8 +819,9 @@ fn describe(figure: Figure) -> String {
     DoubleChromaticBelow -> ", double chromatic"
     EnclosureAboveBelow -> ", enclosure above then below"
     EnclosureBelowAbove -> ", enclosure below then above"
+    Anticipate -> ", arriving early and holding over"
   }
-  filling <> landing
+  filling <> arrived
 }
 
 // --- Pitch sets --------------------------------------------------------------
@@ -875,7 +950,7 @@ pub fn pitches(line: Line) -> List(Pitch) {
   |> list.flat_map(fn(one) { one.events })
   |> list.filter_map(fn(event) {
     case event {
-      Tone(note, _) -> Ok(note)
+      Tone(note, _, _) -> Ok(note)
       Rest(_) -> Error(Nil)
     }
   })
@@ -887,7 +962,7 @@ pub fn duration(line: Line) -> Int {
   |> list.flat_map(fn(one) { one.events })
   |> list.fold(0, fn(total, event) {
     case event {
-      Tone(_, length) -> total + length
+      Tone(_, length, _) -> total + length
       Rest(length) -> total + length
     }
   })
@@ -930,7 +1005,7 @@ pub fn simplify_spelling(line: Line) -> Line {
         ..one,
         events: list.map(one.events, fn(event) {
           case event {
-            Tone(note, length) ->
+            Tone(note, length, held) ->
               case int.absolute_value(note.class.alteration) > 1 {
                 True ->
                   Tone(
@@ -939,8 +1014,9 @@ pub fn simplify_spelling(line: Line) -> Line {
                       False -> pitch.PreferFlats
                     }),
                     length,
+                    held,
                   )
-                False -> Tone(note, length)
+                False -> Tone(note, length, held)
               }
             Rest(length) -> Rest(length)
           }
@@ -960,7 +1036,8 @@ pub fn transpose(line: Line, by: interval.Interval) -> Line {
         chord: chord.transpose(one.chord, by),
         events: list.map(one.events, fn(event) {
           case event {
-            Tone(note, length) -> Tone(interval.transpose(note, by), length)
+            Tone(note, length, held) ->
+              Tone(interval.transpose(note, by), length, held)
             Rest(length) -> Rest(length)
           }
         }),
