@@ -260,3 +260,24 @@ pub fn write_interval_for_key(
     _, _ -> instrument.write_interval
   }
 }
+
+/// Two octaves through the middle of the instrument, given at concert pitch.
+///
+/// Generated lines need somewhere to live. The full range of a horn is wide
+/// enough that a line wandering across all of it leaps about; the middle two
+/// octaves are where the practice actually happens.
+pub fn comfortable_range(instrument: Instrument) -> #(Pitch, Pitch) {
+  let octaves =
+    {
+      pitch.to_midi(instrument.highest_written)
+      - pitch.to_midi(instrument.lowest_written)
+    }
+    / 12
+  let low =
+    interval.transpose(
+      instrument.lowest_written,
+      interval.octaves({ octaves - 1 } / 2),
+    )
+  let high = interval.transpose(low, interval.octaves(2))
+  #(sounds(instrument, low), sounds(instrument, high))
+}

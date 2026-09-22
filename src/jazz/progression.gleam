@@ -319,31 +319,24 @@ fn numeral_of(steps: Int) -> String {
 
 // --- Keys --------------------------------------------------------------------
 
-fn counting(total: Int) -> List(Int) {
-  case total <= 0 {
-    True -> []
-    False -> list.append(counting(total - 1), [total - 1])
-  }
-}
-
 /// The twelve keys in the order jazz practises them: down a fifth each time,
 /// respelled whenever the key signature would run away.
 pub fn cycle_of_fourths(start: PitchClass) -> List(PitchClass) {
   let base = pitch.fifths(start)
-  counting(12)
+  num.counting(12)
   |> list.map(fn(step) { pitch.simplify_key(pitch.from_fifths(base - step)) })
 }
 
 /// The same twelve keys, going the other way.
 pub fn cycle_of_fifths(start: PitchClass) -> List(PitchClass) {
   let base = pitch.fifths(start)
-  counting(12)
+  num.counting(12)
   |> list.map(fn(step) { pitch.simplify_key(pitch.from_fifths(base + step)) })
 }
 
 /// Twelve keys in chromatic order.
 pub fn chromatic(start: PitchClass) -> List(PitchClass) {
-  counting(12)
+  num.counting(12)
   |> list.map(fn(step) {
     pitch.simplify_key(interval.transpose_class(
       start,

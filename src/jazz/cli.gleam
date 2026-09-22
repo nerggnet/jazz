@@ -5,6 +5,7 @@
 //// back. Nothing here knows how a scale is built.
 
 import argv
+import gleam/int
 import gleam/io
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -12,6 +13,7 @@ import gleam/result
 import gleam/string
 import jazz/chord
 import jazz/instrument.{type Instrument}
+import jazz/lick
 import jazz/pitch.{type PitchClass}
 import jazz/progression
 import jazz/render/text
@@ -25,6 +27,7 @@ pub fn run() -> Nil {
     ["chord", ..rest] -> report(chord_command(rest))
     ["progression", ..rest] | ["prog", ..rest] ->
       report(progression_command(rest))
+    ["lick", ..rest] | ["line", ..rest] -> report(lick_command(rest))
     ["transpose", ..rest] -> report(transpose_command(rest))
     ["list", ..rest] -> report(list_command(rest))
     [unknown, ..] ->
@@ -103,6 +106,73 @@ fn progression_command(args: List(String)) -> Result(String, String) {
         "usage: jazz progression <name> [--key <key>] [--for <instrument>] [--all-keys]",
       )
   }
+}
+
+fn lick_command(args: List(String)) -> Result(String, String) {
+  use options <- result.try(parse(args))
+  use player <- result.try(instrument_option(options))
+  use level <- result.try(case flag(options, "level") {
+    Some(text) -> lick.level_from_string(text)
+    None -> Ok(lick.Beginner)
+  })
+  use seed <- result.try(case flag(options, "seed") {
+    Some(text) ->
+      int.parse(text)
+      |> result.replace_error(
+        "`--seed` wants a whole number, not `" <> text <> "`",
+      )
+    None -> Ok(1)
+  })
+  use requested <- result.try(case flag(options, "key") {
+    Some(text) -> result.map(pitch.parse_class(text), Some)
+    None -> Ok(None)
+  })
+
+  let #(low, high) = instrument.comfortable_range(player)
+  let settings = lick.Options(level, seed, low, high)
+  let key = option.unwrap(requested, pitch.natural(pitch.C))
+
+  case options.positional {
+    [] ->
+      Error(
+        "usage: jazz lick <progression|chords...> [--key <key>] [--level <level>] [--seed <n>]",
+      )
+    [single] ->
+      case progression.build(single, key) {
+        Ok(built) ->
+          Ok(text.lick_view(
+            lick.over_progression(built, settings),
+            built.name <> " in " <> pitch.class_to_string(built.key),
+            player,
+            built.key,
+          ))
+        Error(unknown) ->
+          case chord.parse(single) {
+            Ok(_) -> custom_lick([single], requested, settings, player)
+            Error(_) -> Error(unknown)
+          }
+      }
+    many -> custom_lick(many, requested, settings, player)
+  }
+}
+
+/// A line over whatever changes were typed on the command line, a bar each.
+fn custom_lick(
+  symbols: List(String),
+  requested: Option(PitchClass),
+  settings: lick.Options,
+  player: Instrument,
+) -> Result(String, String) {
+  use chords <- result.try(list.try_map(symbols, chord.parse))
+  // Without a key given, assume the changes end where they mean to.
+  let key = case requested, list.last(chords) {
+    Some(given), _ -> given
+    None, Ok(final) -> final.root
+    None, Error(_) -> pitch.natural(pitch.C)
+  }
+  let line =
+    lick.over_chords(list.map(chords, fn(one) { #(one, lick.bar) }), settings)
+  Ok(text.lick_view(line, string.join(symbols, " "), player, key))
 }
 
 fn transpose_command(args: List(String)) -> Result(String, String) {
@@ -206,6 +276,7 @@ USAGE
   jazz scale <root> <scale> [options]
   jazz chord <symbol> [options]
   jazz progression <name> [options]
+  jazz lick <progression|chords...> [options]
   jazz transpose <notes...> --from <instrument> --to <instrument>
   jazz list scales|instruments|progressions
 
@@ -213,6 +284,8 @@ OPTIONS
   --for, -f <instrument>   Write the part for this instrument (default: concert)
   --key, -k <key>          Concert key for a progression (default: C)
   --all-keys               Repeat through all twelve keys
+  --level <level>          beginner (default), intermediate, or advanced
+  --seed <n>               Pick a different line; the same seed always repeats
   --cycle <order>          fourths (default), fifths, or chromatic
 
 EXAMPLES
@@ -221,6 +294,8 @@ EXAMPLES
   jazz chord Bb7#9 --for tenor
   jazz progression ii-V-I --key F --for alto
   jazz progression blues --key Bb --for tenor
+  jazz lick ii-V-I --key C --for alto --level intermediate
+  jazz lick Dm7 G7 Cmaj7 --for tenor --seed 12
   jazz transpose C E G --from concert --to alto
 
 NOTES

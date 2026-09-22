@@ -11,6 +11,7 @@ import gleam/string
 import jazz/chord.{type Chord}
 import jazz/instrument.{type Instrument}
 import jazz/interval.{type Interval}
+import jazz/lick.{type Line, type Segment}
 import jazz/pitch.{type PitchClass}
 import jazz/progression.{type Progression}
 import jazz/scale.{type Scale}
@@ -197,6 +198,129 @@ fn bar_line(bars: List(#(String, String)), width: Int) -> String {
   <> indent
   <> "  "
   <> string.trim_end(numerals)
+}
+
+// --- Licks -------------------------------------------------------------------
+
+pub fn lick_view(
+  line: Line,
+  heading: String,
+  player: Instrument,
+  key: PitchClass,
+) -> String {
+  let shift = instrument.write_interval_for_key(player, key)
+  let written = lick.transpose(line, shift) |> lick.simplify_spelling
+  let rows = lick_rows(written.segments, 0, [])
+
+  let chord_width = int.max(column_width(rows, fn(row) { row.1 }), 5)
+  let note_width = int.max(column_width(rows, fn(row) { row.2 }), 4)
+  let target_width = int.max(column_width(rows, fn(row) { row.3 }), 6)
+
+  let body =
+    list.map(rows, fn(row) {
+      indent
+      <> string.pad_end(row.0, 5, " ")
+      <> string.pad_end(row.1, chord_width + 2, " ")
+      <> string.pad_end(row.2, note_width + 2, " ")
+      <> string.pad_end(row.3, target_width + 2, " ")
+      <> row.4
+      |> string.trim_end
+    })
+
+  let header =
+    indent
+    <> string.pad_end("Bar", 5, " ")
+    <> string.pad_end("Chord", chord_width + 2, " ")
+    <> string.pad_end("Line", note_width + 2, " ")
+    <> string.pad_end("Target", target_width + 2, " ")
+    <> "How it is built"
+
+  let footer = case lick.span(written) {
+    Ok(#(low, high)) ->
+      indent
+      <> case instrument.is_concert(player) {
+        True -> "Range "
+        False -> "Written range "
+      }
+      <> pitch.to_string(low)
+      <> " to "
+      <> pitch.to_string(high)
+      <> ".  Same line again with --seed "
+      <> int.to_string(line.seed)
+      <> "."
+    Error(_) -> indent <> "Empty line."
+  }
+
+  let concert = case instrument.is_concert(player) {
+    True -> []
+    False -> [
+      indent
+      <> "Concert: "
+      <> string.join(
+        list.map(line.segments, fn(one) { chord.to_string(one.chord) }),
+        " ",
+      ),
+    ]
+  }
+
+  string.join(
+    list.flatten([
+      [title(heading, player), "", header],
+      body,
+      [""],
+      concert,
+      [footer],
+    ]),
+    "\n",
+  )
+}
+
+/// One row per chord, carrying the bar it starts in.
+fn lick_rows(
+  segments: List(Segment),
+  elapsed: Int,
+  acc: List(#(String, String, String, String, String)),
+) -> List(#(String, String, String, String, String)) {
+  case segments {
+    [] -> list.reverse(acc)
+    [one, ..rest] -> {
+      let length =
+        list.fold(one.events, 0, fn(total, event) {
+          case event {
+            lick.Tone(_, beats) -> total + beats
+            lick.Rest(beats) -> total + beats
+          }
+        })
+      let names =
+        one.events
+        |> list.map(fn(event) {
+          case event {
+            lick.Tone(note, _) ->
+              string.pad_end(pitch.class_to_string(note.class), 3, " ")
+            lick.Rest(_) -> string.pad_end("-", 3, " ")
+          }
+        })
+        |> string.concat
+        |> string.trim_end
+      let row = #(
+        int.to_string(elapsed / lick.bar + 1),
+        chord.to_string(one.chord),
+        names,
+        one.target,
+        one.device,
+      )
+      lick_rows(rest, elapsed + length, [row, ..acc])
+    }
+  }
+}
+
+fn column_width(
+  rows: List(#(String, String, String, String, String)),
+  get: fn(#(String, String, String, String, String)) -> String,
+) -> Int {
+  list.fold(rows, 0, fn(widest, row) {
+    int.max(widest, string.length(get(row)))
+  })
 }
 
 // --- Transposition -----------------------------------------------------------

@@ -21,3 +21,18 @@ pub fn modulo(a: Int, b: Int) -> Int {
     False -> remainder
   }
 }
+
+/// The numbers from zero up to but not including `total`.
+pub fn counting(total: Int) -> List(Int) {
+  case total <= 0 {
+    True -> []
+    False -> append_last(counting(total - 1), total - 1)
+  }
+}
+
+fn append_last(items: List(Int), last: Int) -> List(Int) {
+  case items {
+    [] -> [last]
+    [first, ..rest] -> [first, ..append_last(rest, last)]
+  }
+}

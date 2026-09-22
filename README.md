@@ -84,6 +84,45 @@ tenor player.
 `jazz list scales`, `jazz list instruments` and `jazz list progressions` show
 what is available.
 
+### Lines
+
+```
+$ gleam run -- lick ii-V-I --key F --for alto --level intermediate --seed 4
+
+  Major ii-V-I in F  --  Alto sax (Eb)
+
+  Bar  Chord  Line                     Target  How it is built
+  1    Em7    G  A  B  D  A  B  A  F#  b3      1235 pattern, enclosure above then below
+  2    A7     G  E  C# E  G  A  C# E   b7      arpeggio
+  3    Dmaj7  F# G  A  C# G  A  B  D   3       1235 pattern
+  4    Dmaj7  F# A  C# D  F# A  F# D   3       arpeggio
+
+  Concert: Gm7 C7 Fmaj7 Fmaj7
+  Written range C#4 to A5.  Same line again with --seed 4.
+```
+
+There is no library of transcribed licks here, on purpose. Stored licks belong
+to whoever played them, and learning them one at a time teaches the phrases
+rather than the language. What is encoded instead is the grammar that produces
+them: land on a chord tone on the strong beat, usually the third or the
+seventh; arrive at it by step, by chromatic approach, or by enclosure; fill the
+space between with scale motion, an arpeggio, or a digital pattern. The last
+column says which of those happened, so the line can be taken apart rather than
+only played.
+
+`--level` decides how much vocabulary is in play: beginners get plain
+arpeggios and scale runs into their targets, advanced lines get enclosures,
+double chromatics and the 1235 pattern. `--seed` makes any line reproducible,
+on either compilation target. Lines are generated inside the middle two octaves
+of whichever horn is chosen, so what comes out is playable.
+
+Changes can also be given directly:
+
+```sh
+gleam run -- lick Dm7 G7 Cmaj7 --for tenor --seed 12
+gleam run -- lick "Cm7b5" "F7alt" "Bbm6" --for alto --level advanced
+```
+
 ## Why it is built this way
 
 **Pitches keep their spelling.** A pitch is a letter name plus an alteration,
@@ -131,6 +170,7 @@ share everything behind.
 | `jazz/scale` | Scale formulas, names, and what each one is for |
 | `jazz/chord` | Chord symbols in and out, chord-scale suggestions |
 | `jazz/progression` | Progressions built from degrees, roman numerals, key cycles |
+| `jazz/lick` | Line generation: targets, approaches and connective devices |
 | `jazz/render/text` | Terminal output |
 | `jazz/cli` | Argument handling |
 

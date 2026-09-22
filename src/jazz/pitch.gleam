@@ -226,6 +226,19 @@ fn sharp_spelling(semitones: Int) -> PitchClass {
   }
 }
 
+/// Respell a pitch with the simplest accidental that keeps the same sound.
+pub fn respell(note: Pitch, prefer: Spelling) -> Pitch {
+  let sounding = to_midi(note)
+  let simple = simplify(note.class, prefer)
+  let octave =
+    num.floor_div(
+      sounding - letter_semitones(simple.letter) - simple.alteration,
+      12,
+    )
+    - 1
+  Pitch(simple, octave)
+}
+
 /// Respell a key centre only when its key signature would be unplayable.
 ///
 /// Transposing concert F-sharp major for alto gives D-sharp major and its
