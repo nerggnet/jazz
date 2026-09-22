@@ -88,6 +88,10 @@ pub fn level_from_string(text: String) -> Result(Level, String) {
   }
 }
 
+pub fn all_levels() -> List(Level) {
+  [Beginner, Intermediate, Advanced]
+}
+
 pub fn level_name(level: Level) -> String {
   case level {
     Beginner -> "beginner"
