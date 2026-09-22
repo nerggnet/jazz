@@ -118,6 +118,14 @@ stops before its end, and the gap is real silence: an approach note never runs
 across it, because whatever comes out of a rest is a target rather than the
 tail of the figure before it.
 
+The line goes somewhere. Targets used to be chosen for the smoothest voice
+leading, which minimises motion by definition: the line sat in one octave and
+stayed there all chorus. Each line now gets a shape for its register — usually
+an arch, peaking around three fifths of the way through and coming down, and
+sometimes a climb or a pair of arches — and a target is chosen for where the
+shape says the line ought to be as much as for where it just was. The footer
+says which shape it got.
+
 Not everything is an eighth note. The line leans on a note here and there, and
 it arrives on the next chord early and holds over the bar line — the tie is
 what makes that an anticipation rather than the same note played twice, and it

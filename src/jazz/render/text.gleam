@@ -364,6 +364,8 @@ pub fn lick_view(
       <> pitch.to_string(low)
       <> " to "
       <> pitch.to_string(high)
+      <> ", in "
+      <> lick.arc_name(line.arc)
       <> ".  Same line again with --seed "
       <> int.to_string(line.seed)
       <> "."

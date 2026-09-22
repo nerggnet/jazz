@@ -371,6 +371,88 @@ pub fn the_line_leans_on_notes_test() {
   assert held(lick.Beginner) > held(lick.Advanced)
 }
 
+fn heights(subject: lick.Line) -> List(Int) {
+  list.filter_map(subject.segments, fn(one) {
+    case first_tone(one) {
+      Ok(note) -> Ok(pitch.to_midi(note))
+      Error(_) -> Error(Nil)
+    }
+  })
+}
+
+fn average(values: List(Int)) -> Int {
+  case list.length(values) {
+    0 -> 0
+    count -> list.fold(values, 0, fn(total, one) { total + one }) / count
+  }
+}
+
+/// The average height of the targets in each third of the form.
+fn thirds(subject: lick.Line) -> #(Int, Int, Int) {
+  let values = heights(subject)
+  let step = list.length(values) / 3
+  #(
+    average(list.take(values, step)),
+    average(list.take(list.drop(values, step), step)),
+    average(list.drop(values, 2 * step)),
+  )
+}
+
+fn shaped(arc: lick.Arc) -> List(lick.Line) {
+  [lick.Beginner, lick.Intermediate, lick.Advanced]
+  |> list.flat_map(fn(level) {
+    [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+    |> list.map(fn(seed) { chorus(level, seed) })
+  })
+  |> list.filter(fn(one) { one.arc == arc })
+}
+
+fn across(lines: List(lick.Line)) -> #(Int, Int, Int) {
+  let totals =
+    list.fold(lines, #(0, 0, 0), fn(sum, one) {
+      let #(first, middle, last) = thirds(one)
+      #(sum.0 + first, sum.1 + middle, sum.2 + last)
+    })
+  let count = int.max(1, list.length(lines))
+  #(totals.0 / count, totals.1 / count, totals.2 / count)
+}
+
+pub fn the_line_goes_somewhere_test() {
+  // Choosing every target for the smoothest voice leading keeps the line in
+  // one octave all chorus, because staying put is always the smallest move.
+  list.each(choruses(), fn(one) {
+    let reached = heights(one)
+    let assert Ok(lowest) = list.reduce(reached, int.min)
+    let assert Ok(highest) = list.reduce(reached, int.max)
+    assert highest - lowest > 7
+  })
+}
+
+pub fn an_arch_peaks_in_the_middle_test() {
+  let arches = shaped(lick.Arch)
+  assert list.length(arches) > 10
+  let #(first, middle, last) = across(arches)
+  assert middle > first
+  assert middle > last
+}
+
+pub fn a_climb_climbs_test() {
+  let climbs = shaped(lick.Rise)
+  assert list.length(climbs) > 3
+  let #(first, _, last) = across(climbs)
+  assert last > first
+}
+
+pub fn the_arc_does_not_tear_the_line_apart_test() {
+  // Targets are the same note in different octaves, so the arc is choosing a
+  // register. It must never ask for more than the octave that implies.
+  list.each(choruses(), fn(one) {
+    list.each(pairs(heights(one)), fn(step) {
+      assert int.absolute_value(step.1 - step.0) <= 12
+    })
+  })
+}
+
 pub fn transposing_a_line_is_reversible_test() {
   let original = line(lick.Intermediate, 11)
   let up = interval.degree(6, 0)

@@ -49,7 +49,30 @@ pub type Segment {
 }
 
 pub type Line {
-  Line(segments: List(Segment), seed: Int)
+  Line(segments: List(Segment), seed: Int, arc: Arc)
+}
+
+/// The shape the line's register makes across the whole form.
+///
+/// Without one, targets are chosen purely for smooth voice leading, which
+/// minimises motion by definition: the line sits in one octave and stays
+/// there all chorus. An arc gives it somewhere to be going.
+pub type Arc {
+  /// Up to a peak around two thirds through, then away. The usual shape of
+  /// a chorus, and the one that sounds like it was heading somewhere.
+  Arch
+  /// Climbing throughout.
+  Rise
+  /// Two arches, for a longer form that would sag in the middle of one.
+  Wave
+}
+
+pub fn arc_name(arc: Arc) -> String {
+  case arc {
+    Arch -> "an arch"
+    Rise -> "a climb"
+    Wave -> "two arches"
+  }
 }
 
 /// How much vocabulary to draw on.
@@ -127,11 +150,54 @@ pub fn over_chords(items: List(#(Chord, Int)), settings: Options) -> Line {
   let total = list.fold(items, 0, fn(sum, one) { sum + one.1 })
   let #(windows, generator) =
     phrase_plan(total, settings.level, generator, 0, [])
+  let #(shape, generator) = random.pick(generator, arcs(), Arch)
   let #(targets, generator) =
-    choose_targets(items, settings, generator, None, [])
+    choose_targets(items, settings, shape, total, generator, None, 0, [])
   let segments =
     fill_all(items, targets, windows, settings, generator, 0, Echo(None, 0), [])
-  Line(segments, settings.seed)
+  Line(segments, settings.seed, shape)
+}
+
+/// Arches mostly, because that is what a chorus does.
+fn arcs() -> List(Arc) {
+  [Arch, Arch, Rise, Wave]
+}
+
+/// Where the line ought to be sitting at a given point in the form.
+fn aiming_at(shape: Arc, at: Int, total: Int, settings: Options) -> Int {
+  let low = pitch.to_midi(settings.low)
+  let high = pitch.to_midi(settings.high)
+  let position = case total <= 0 {
+    True -> 0
+    False -> at * 100 / total
+  }
+  low + { high - low } * height_at(turns(shape), position) / 100
+}
+
+/// The arc as a few turning points, in hundredths of the form and of the
+/// range, with straight lines between them.
+fn turns(shape: Arc) -> List(#(Int, Int)) {
+  case shape {
+    Arch -> [#(0, 25), #(58, 90), #(100, 28)]
+    Rise -> [#(0, 15), #(100, 90)]
+    Wave -> [#(0, 28), #(30, 78), #(55, 38), #(82, 90), #(100, 45)]
+  }
+}
+
+fn height_at(points: List(#(Int, Int)), position: Int) -> Int {
+  case points {
+    [] -> 50
+    [#(_, only)] -> only
+    [#(from, low), #(to, high), ..rest] ->
+      case position <= to {
+        False -> height_at([#(to, high), ..rest], position)
+        True ->
+          case to == from {
+            True -> high
+            False -> low + { high - low } * { position - from } / { to - from }
+          }
+      }
+  }
 }
 
 // --- Phrasing ----------------------------------------------------------------
@@ -230,13 +296,16 @@ fn spread(subject: Progression) -> List(#(Chord, Int)) {
 fn choose_targets(
   items: List(#(Chord, Int)),
   settings: Options,
+  shape: Arc,
+  total: Int,
   generator: Random,
   previous: Option(Pitch),
+  at: Int,
   acc: List(#(Pitch, String)),
 ) -> #(List(#(Pitch, String)), Random) {
   case items {
     [] -> #(list.reverse(acc), generator)
-    [#(current, _), ..rest] -> {
+    [#(current, length), ..rest] -> {
       let tones = chord_pitches(current, settings)
       let #(wanted, label, generator) =
         target_class(current, settings.level, generator)
@@ -246,14 +315,22 @@ fn choose_targets(
         [] -> tones
         found -> found
       }
+      let aim = aiming_at(shape, at, total, settings)
       let target = case previous {
-        Some(note) -> nearest(candidates, note)
-        None -> middle(candidates, settings)
+        Some(note) ->
+          settling(candidates, pitch.to_midi(note), aim, settings.low)
+        None -> nearest_to(candidates, aim, settings.low)
       }
-      choose_targets(rest, settings, generator, Some(target), [
-        #(target, label),
-        ..acc
-      ])
+      choose_targets(
+        rest,
+        settings,
+        shape,
+        total,
+        generator,
+        Some(target),
+        at + length,
+        [#(target, label), ..acc],
+      )
     }
   }
 }
@@ -900,10 +977,34 @@ fn nearest_to(tones: List(Pitch), wanted: Int, fallback: Pitch) -> Pitch {
   }
 }
 
-fn middle(tones: List(Pitch), settings: Options) -> Pitch {
-  let wanted =
-    { pitch.to_midi(settings.low) + pitch.to_midi(settings.high) } / 2
-  nearest_to(tones, wanted, settings.low)
+/// Close to where the line just was, and close to where it ought to be going.
+///
+/// Candidates for a target are the same note in different octaves, so this is
+/// really choosing a register. Weighting the arc above the voice leading is
+/// what lets the line change octave when the shape calls for it, rather than
+/// staying put because staying put is always the smallest move.
+fn settling(
+  candidates: List(Pitch),
+  from: Int,
+  aim: Int,
+  fallback: Pitch,
+) -> Pitch {
+  case candidates {
+    [] -> fallback
+    [first, ..rest] ->
+      list.fold(rest, first, fn(chosen, one) {
+        case cost(one, from, aim) < cost(chosen, from, aim) {
+          True -> one
+          False -> chosen
+        }
+      })
+  }
+}
+
+fn cost(one: Pitch, from: Int, aim: Int) -> Int {
+  int.absolute_value(pitch.to_midi(one) - from)
+  + 2
+  * int.absolute_value(pitch.to_midi(one) - aim)
 }
 
 fn index_of(tones: List(Pitch), note: Pitch) -> Int {
