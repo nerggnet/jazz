@@ -177,7 +177,12 @@ pub fn progression_view(
 
   string.join(
     list.flatten([
-      [title(heading, instrument), "", staff, "", indent <> subject.note],
+      [title(heading, instrument), "", staff],
+      // Changes read off a chart come with no tip attached.
+      case subject.note {
+        "" -> []
+        tip -> ["", indent <> tip]
+      },
       voice,
     ]),
     "\n",
@@ -411,7 +416,9 @@ fn lick_rows(
           case event {
             lick.Tone(note, _) ->
               string.pad_end(pitch.class_to_string(note.class), 3, " ")
-            lick.Rest(_) -> string.pad_end("-", 3, " ")
+            // One dash an eighth, so the columns still line up through a rest.
+            lick.Rest(beats) ->
+              string.repeat(string.pad_end("-", 3, " "), beats)
           }
         })
         |> string.concat

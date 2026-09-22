@@ -430,6 +430,25 @@ fn flush(current: List(String), bars: List(Bar)) -> Result(List(Bar), String) {
   }
 }
 
+/// Split a bar between the chords sharing it, handing the odd eighth to the
+/// earlier ones so that three chords in a bar still add up to a bar.
+pub fn shares(count: Int, total: Int) -> List(Int) {
+  case count <= 0 {
+    True -> []
+    False -> {
+      let each = total / count
+      let over = total % count
+      num.counting(count)
+      |> list.map(fn(at) {
+        case at < over {
+          True -> each + 1
+          False -> each
+        }
+      })
+    }
+  }
+}
+
 // --- Views -------------------------------------------------------------------
 
 /// Every chord in the progression, in order.

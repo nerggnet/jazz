@@ -5,9 +5,19 @@
 //// phrases rather than the language. What is encoded instead is the grammar
 //// that produces them:
 ////
+////   - break the form into phrases, and leave silence at the end of each,
+////   - break the form into phrases, and leave silence at the end of each,
 ////   - land on a chord tone on the strong beat, usually the third or seventh,
 ////   - arrive at it by step, by chromatic approach, or by enclosure,
 ////   - fill the space between with scale motion, an arpeggio, or a pattern.
+////
+//// The phrases come first because everything else hangs off them. Without
+//// them a chorus is thirty two bars of unbroken eighth notes, which nobody
+//// plays, nobody can read, and nobody can breathe through.
+////
+//// The phrases come first because everything else depends on them. Without
+//// them a chorus is thirty two bars of unbroken eighth notes, which nobody
+//// plays, nobody can read, and nobody can breathe through.
 ////
 //// Everything is generated from a seed, so a line can be recovered later, and
 //// stays at concert pitch until something renders it.
@@ -110,20 +120,102 @@ pub fn over_progression(subject: Progression, settings: Options) -> Line {
 /// A line over a list of chords, each with a length in eighth notes.
 pub fn over_chords(items: List(#(Chord, Int)), settings: Options) -> Line {
   let generator = random.new(settings.seed)
+  let total = list.fold(items, 0, fn(sum, one) { sum + one.1 })
+  let #(windows, generator) =
+    phrase_plan(total, settings.level, generator, 0, [])
   let #(targets, generator) =
     choose_targets(items, settings, generator, None, [])
-  let segments = fill_all(items, targets, settings, generator, [])
+  let segments = fill_all(items, targets, windows, settings, generator, 0, [])
   Line(segments, settings.seed)
+}
+
+// --- Phrasing ----------------------------------------------------------------
+
+/// A stretch of the form where the line plays, in eighth notes from the top.
+/// Everything between one window and the next is silence.
+type Window {
+  Window(from: Int, until: Int)
+}
+
+/// Break the form into phrases, each coming in near its start and stopping
+/// before its end.
+fn phrase_plan(
+  total: Int,
+  level: Level,
+  generator: Random,
+  at: Int,
+  acc: List(Window),
+) -> #(List(Window), Random) {
+  case at >= total {
+    True -> #(list.reverse(acc), generator)
+    False -> {
+      let #(wanted, generator) =
+        random.pick(generator, phrase_lengths(level), 2 * bar)
+      let span = int.min(wanted, total - at)
+      let #(late, generator) = entry(level, generator)
+      let #(wanted_rest, generator) = breath(level, generator)
+
+      // However the dice fall, a phrase plays at least one note.
+      let late = int.max(0, int.min(late, span - 1))
+      let rest = int.max(0, int.min(wanted_rest, span - late - 1))
+
+      phrase_plan(total, level, generator, at + span, [
+        Window(at + late, at + span - rest),
+        ..acc
+      ])
+    }
+  }
+}
+
+fn phrase_lengths(level: Level) -> List(Int) {
+  case level {
+    Beginner -> [2 * bar]
+    Intermediate -> [2 * bar, 2 * bar, 4 * bar]
+    Advanced -> [2 * bar, 4 * bar, 4 * bar]
+  }
+}
+
+/// How late into a phrase the line comes in.
+fn entry(level: Level, generator: Random) -> #(Int, Random) {
+  case level {
+    Beginner -> #(0, generator)
+    Intermediate -> random.below(generator, 3)
+    Advanced -> random.below(generator, 5)
+  }
+}
+
+/// How much silence to leave at the end of a phrase. Beginners get more of
+/// it, because space is the part that takes longest to learn to trust.
+fn breath(level: Level, generator: Random) -> #(Int, Random) {
+  let #(least, spread) = case level {
+    Beginner -> #(4, 5)
+    Intermediate -> #(2, 4)
+    Advanced -> #(1, 4)
+  }
+  let #(extra, generator) = random.below(generator, spread)
+  #(least + extra, generator)
+}
+
+/// The part of a segment that gets played, as offsets inside it.
+fn clip(windows: List(Window), at: Int, length: Int) -> Window {
+  case
+    list.find(windows, fn(one) { one.from < at + length && one.until > at })
+  {
+    Ok(one) ->
+      Window(int.max(0, one.from - at), int.min(length, one.until - at))
+    Error(_) -> Window(0, 0)
+  }
+}
+
+/// Whether the line is sounding at a given point in the form.
+fn sounding(windows: List(Window), at: Int) -> Bool {
+  list.any(windows, fn(one) { one.from <= at && one.until > at })
 }
 
 /// Split each bar's time evenly between the chords in it.
 fn spread(subject: Progression) -> List(#(Chord, Int)) {
   list.flat_map(subject.bars, fn(each) {
-    let share = case list.length(each.chords) {
-      0 -> bar
-      count -> bar / count
-    }
-    list.map(each.chords, fn(one) { #(one, share) })
+    list.zip(each.chords, progression.shares(list.length(each.chords), bar))
   })
 }
 
@@ -164,19 +256,31 @@ fn choose_targets(
 fn fill_all(
   items: List(#(Chord, Int)),
   targets: List(#(Pitch, String)),
+  windows: List(Window),
   settings: Options,
   generator: Random,
+  at: Int,
   acc: List(Segment),
 ) -> List(Segment) {
   case items, targets {
     [#(current, length), ..rest], [#(target, label), ..later] -> {
+      let played = clip(windows, at, length)
+      // An approach note only means anything when it runs into the note it is
+      // approaching. Across a rest, the next phrase starts fresh instead.
       let next = case later {
-        [#(upcoming, _), ..] -> Some(upcoming)
+        [#(upcoming, _), ..] ->
+          case played.until == length && sounding(windows, at + length) {
+            True -> Some(upcoming)
+            False -> None
+          }
         [] -> None
       }
       let #(segment, generator) =
-        fill(current, length, target, label, next, settings, generator)
-      fill_all(rest, later, settings, generator, [segment, ..acc])
+        fill(current, length, played, target, label, next, settings, generator)
+      fill_all(rest, later, windows, settings, generator, at + length, [
+        segment,
+        ..acc
+      ])
     }
     _, _ -> list.reverse(acc)
   }
@@ -185,6 +289,35 @@ fn fill_all(
 fn fill(
   current: Chord,
   length: Int,
+  played: Window,
+  target: Pitch,
+  label: String,
+  next: Option(Pitch),
+  settings: Options,
+  generator: Random,
+) -> #(Segment, Random) {
+  case int.max(0, played.until - played.from) {
+    0 -> #(Segment(current, [Rest(length)], "-", "resting"), generator)
+    slots ->
+      sound(
+        current,
+        length,
+        played,
+        slots,
+        target,
+        label,
+        next,
+        settings,
+        generator,
+      )
+  }
+}
+
+fn sound(
+  current: Chord,
+  length: Int,
+  played: Window,
+  slots: Int,
   target: Pitch,
   label: String,
   next: Option(Pitch),
@@ -201,10 +334,11 @@ fn fill(
   let #(connector, generator) =
     random.pick(generator, connectors(settings.level), ScaleRun)
 
-  // The approach has to fit in the bar; if it does not, walk in directly.
-  let #(chosen, body_length) = case length - 1 - approach_length(wanted) {
+  // The approach has to fit in what is left of the phrase; if it does not,
+  // walk in directly.
+  let #(chosen, body_length) = case slots - 1 - approach_length(wanted) {
     room if room >= 0 -> #(wanted, room)
-    _ -> #(Direct, length - 1)
+    _ -> #(Direct, slots - 1)
   }
 
   let direction = case next {
@@ -220,20 +354,34 @@ fn fill(
     build_body(connector, tones, arpeggio, target, body_length, direction)
   let approach = build_approach(chosen, next, tones)
 
-  let events =
+  let notes =
     [target, ..body]
     |> list.append(approach)
     |> list.map(fn(one) { Tone(one, 1) })
+
+  let after = length - played.until
+  let events = list.flatten([silence(played.from), notes, silence(after)])
 
   #(
     Segment(
       chord: current,
       events: events,
       target: label,
-      device: describe(connector, chosen),
+      device: describe(connector, chosen)
+        <> case after > 0 {
+        True -> ", then a breath"
+        False -> ""
+      },
     ),
     generator,
   )
+}
+
+fn silence(length: Int) -> List(Event) {
+  case length > 0 {
+    True -> [Rest(length)]
+    False -> []
+  }
 }
 
 // --- Vocabulary --------------------------------------------------------------

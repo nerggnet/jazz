@@ -105,15 +105,25 @@ $ gleam run -- lick ii-V-I --key F --for alto --level intermediate --seed 4
 There is no library of transcribed licks here, on purpose. Stored licks belong
 to whoever played them, and learning them one at a time teaches the phrases
 rather than the language. What is encoded instead is the grammar that produces
-them: land on a chord tone on the strong beat, usually the third or the
-seventh; arrive at it by step, by chromatic approach, or by enclosure; fill the
-space between with scale motion, an arpeggio, or a digital pattern. The last
-column says which of those happened, so the line can be taken apart rather than
-only played.
+them: break the form into phrases and leave silence at the end of each; land on
+a chord tone on the strong beat, usually the third or the seventh; arrive at it
+by step, by chromatic approach, or by enclosure; fill the space between with
+scale motion, an arpeggio, or a digital pattern. The last column says which of
+those happened, so the line can be taken apart rather than only played.
 
-`--level` decides how much vocabulary is in play: beginners get plain
-arpeggios and scale runs into their targets, advanced lines get enclosures,
-double chromatics and the 1235 pattern. `--seed` makes any line reproducible,
+The phrases come first, because everything else hangs off them. Without them a
+chorus is thirty two bars of unbroken eighth notes, which nobody plays, nobody
+can read and nobody can breathe through. A phrase comes in near its start,
+stops before its end, and the gap is real silence: an approach note never runs
+across it, because whatever comes out of a rest is a target rather than the
+tail of the figure before it.
+
+`--level` decides how much vocabulary is in play and how much room it leaves:
+beginners get plain arpeggios and scale runs into their targets, and come in on
+the beat with half a bar of silence at the end of every phrase; advanced lines
+get enclosures, double chromatics and the 1235 pattern, enter late and play on
+longer. Measured over a chorus, that runs from about a third silence down to a
+fifth. `--seed` makes any line reproducible,
 on either compilation target. Lines are generated inside the middle two octaves
 of whichever horn is chosen, so what comes out is playable.
 

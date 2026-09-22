@@ -36,15 +36,102 @@ pub fn the_line_fills_the_changes_test() {
   })
 }
 
+fn first_tone(segment: lick.Segment) -> Result(pitch.Pitch, Nil) {
+  segment.events
+  |> list.filter_map(fn(event) {
+    case event {
+      lick.Tone(note, _) -> Ok(note)
+      lick.Rest(_) -> Error(Nil)
+    }
+  })
+  |> list.first
+}
+
+fn silence(subject: lick.Line) -> Int {
+  subject.segments
+  |> list.flat_map(fn(one) { one.events })
+  |> list.fold(0, fn(total, event) {
+    case event {
+      lick.Rest(beats) -> total + beats
+      lick.Tone(_, _) -> total
+    }
+  })
+}
+
 pub fn every_target_is_a_chord_tone_test() {
-  // The note on the downbeat is the whole point; it has to belong to the chord.
+  // The first note over a chord is the whole point, and it has to belong to
+  // the chord. Since a phrase can start anywhere, this is also what says no
+  // approach note is left dangling on the far side of a rest: whatever comes
+  // out of a silence is a target, not the tail of the figure before it.
   list.each([lick.Beginner, lick.Intermediate, lick.Advanced], fn(level) {
     list.each([1, 5, 12, 64], fn(seed) {
       list.each(line(level, seed).segments, fn(segment) {
-        let assert [lick.Tone(first, _), ..] = segment.events
-        let tones = chord.notes(segment.chord)
-        assert list.any(tones, fn(one) { pitch.same(one, first.class) })
+        case first_tone(segment) {
+          Error(_) -> Nil
+          Ok(first) -> {
+            let tones = chord.notes(segment.chord)
+            assert list.any(tones, fn(one) { pitch.same(one, first.class) })
+          }
+        }
       })
+    })
+  })
+}
+
+pub fn lines_breathe_test() {
+  // Every line leaves somewhere to breathe, and none of them is all silence.
+  list.each([lick.Beginner, lick.Intermediate, lick.Advanced], fn(level) {
+    list.each([1, 2, 3, 4, 5, 9, 21], fn(seed) {
+      let subject = line(level, seed)
+      let quiet = silence(subject)
+      assert quiet > 0
+      assert quiet < lick.duration(subject)
+      assert lick.pitches(subject) != []
+    })
+  })
+}
+
+pub fn beginners_are_given_more_space_test() {
+  // Space is the part that takes longest to learn to trust, so a beginner
+  // gets more of it handed to them. Measured over a chorus rather than a
+  // single cell: four bars is too small a sample to tell the levels apart.
+  let assert Ok(changes) =
+    progression.parse("|: Dm7 | G7 | Em7 | A7 | Dm7 | G7 | Cmaj7 | Cmaj7 :|")
+  let quiet = fn(level) {
+    [1, 2, 3, 4, 5, 6, 7, 8]
+    |> list.map(fn(seed) {
+      silence(lick.over_progression(changes, lick.options(level, seed)))
+    })
+    |> list.fold(0, fn(total, one) { total + one })
+  }
+  assert quiet(lick.Beginner) > quiet(lick.Intermediate)
+  assert quiet(lick.Intermediate) > quiet(lick.Advanced)
+}
+
+pub fn rests_are_never_empty_test() {
+  list.each([lick.Beginner, lick.Intermediate, lick.Advanced], fn(level) {
+    list.each([1, 2, 3, 7, 13], fn(seed) {
+      list.each(line(level, seed).segments, fn(segment) {
+        list.each(segment.events, fn(event) {
+          let beats = case event {
+            lick.Rest(length) -> length
+            lick.Tone(_, length) -> length
+          }
+          assert beats > 0
+        })
+      })
+    })
+  })
+}
+
+pub fn phrasing_does_not_change_the_length_test() {
+  // Silence takes up exactly the room the notes it replaced would have.
+  let assert Ok(changes) =
+    progression.parse("|: Dm7 | G7 | Em7 | A7 | Dm7 | G7 | Cmaj7 | Cmaj7 :|")
+  list.each([lick.Beginner, lick.Intermediate, lick.Advanced], fn(level) {
+    list.each([1, 4, 17], fn(seed) {
+      let subject = lick.over_progression(changes, lick.options(level, seed))
+      assert lick.duration(subject) == 16 * lick.bar
     })
   })
 }

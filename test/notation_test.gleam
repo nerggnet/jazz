@@ -146,6 +146,54 @@ pub fn a_chart_has_one_bar_per_bar_test() {
   assert list.length(notation.from_progression(built, concert()).measures) == 12
 }
 
+pub fn every_duration_can_be_written_down_test() {
+  // Notation has an eighth, a quarter, a dotted quarter and so on, and
+  // nothing in between: five eighths is not a rest, it is two rests.
+  let writable = [1, 2, 3, 4, 6, 8]
+  let assert Ok(changes) =
+    progression.parse("|: Dm7 | G7 | Em7 | A7 | Dm7 | G7 | Cmaj7 | Cmaj7 :|")
+  list.each([lick.Beginner, lick.Intermediate, lick.Advanced], fn(level) {
+    list.each([1, 2, 3, 5, 8, 13], fn(seed) {
+      let line = lick.over_progression(changes, lick.options(level, seed))
+      let score = notation.from_line(line, "test", PitchClass(C, 0), concert())
+      list.each(score.measures, fn(measure) {
+        let #(_, total) =
+          list.fold(measure.events, #(0, 0), fn(state, event) {
+            let #(at, sum) = state
+            let length = notation.duration_of(event)
+            assert list.contains(writable, length)
+            // Anything longer than an eighth has to start on a beat.
+            assert length == 1 || at % 2 == 0
+            #(at + length, sum + length)
+          })
+        assert total <= notation.measure_capacity(score)
+      })
+    })
+  })
+}
+
+pub fn a_bar_shared_three_ways_still_adds_up_test() {
+  assert progression.shares(1, 8) == [8]
+  assert progression.shares(2, 8) == [4, 4]
+  // The odd eighth goes to the earlier chords rather than off the end.
+  assert progression.shares(3, 8) == [3, 3, 2]
+  assert progression.shares(5, 8) == [2, 2, 2, 1, 1]
+  assert progression.shares(0, 8) == []
+
+  let assert Ok(changes) = progression.parse("| Dm7 G7 Cmaj7 | Cmaj7 |")
+  let score = notation.from_progression(changes, concert())
+  list.each(score.measures, fn(measure) {
+    let total =
+      list.fold(measure.events, 0, fn(sum, event) {
+        sum + notation.duration_of(event)
+      })
+    assert total == notation.measure_capacity(score)
+  })
+  // And a line over it fills the same two bars.
+  let line = lick.over_progression(changes, lick.options(lick.Advanced, 2))
+  assert lick.duration(line) == 2 * lick.bar
+}
+
 // --- Instruments -------------------------------------------------------------
 
 pub fn exercises_land_on_the_horn_test() {

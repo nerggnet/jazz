@@ -110,25 +110,23 @@ fn progression_command(args: List(String)) -> Result(String, String) {
         |> abc.render_book
     }
   }
-  use key <- result.try(case flag(options, "key") {
-    Some(text) -> pitch.parse_class(text)
-    None -> Ok(pitch.natural(pitch.C))
-  })
-  case options.positional {
-    [name] ->
-      case flag(options, "all-keys") {
-        Some(_) ->
-          keys(key, flag(options, "cycle"))
-          |> list.try_map(fn(each) { progression.build(name, each) })
-          |> result.map(draw)
-        None ->
-          progression.build(name, key)
-          |> result.map(fn(built) { draw([built]) })
-      }
-    _ ->
+  use requested <- result.try(key_option(options))
+  let key = option.unwrap(requested, pitch.natural(pitch.C))
+
+  case options.positional, flag(options, "all-keys") {
+    [], _ ->
       Error(
-        "usage: jazz progression <name> [--key <key>] [--for <instrument>] [--all-keys]",
+        "usage: jazz progression <name|changes> [--key <key>] [--for <instrument>] [--all-keys]",
       )
+    // Round the cycle only makes sense for something with degrees behind it.
+    [name], Some(_) ->
+      keys(key, flag(options, "cycle"))
+      |> list.try_map(fn(each) { progression.build(name, each) })
+      |> result.map(draw)
+    positional, _ -> {
+      use built <- result.try(changes(positional, requested))
+      Ok(draw([built]))
+    }
   }
 }
 
@@ -363,7 +361,7 @@ fn help() -> String {
 USAGE
   jazz scale <root> <scale> [options]
   jazz chord <symbol> [options]
-  jazz progression <name> [options]
+  jazz progression <name|changes> [options]
   jazz lick <progression|changes> [options]
   jazz analyse <progression|changes> [options]
   jazz transpose <notes...> --from <instrument> --to <instrument>

@@ -174,13 +174,13 @@ pub fn from_progression(subject: Progression, player: Instrument) -> Score {
 
   let measures =
     list.map(moved.bars, fn(one) {
-      let share = case list.length(one.chords) {
-        0 -> capacity
-        count -> capacity / count
-      }
       Measure(
-        list.map(one.chords, fn(each) {
-          Spacer(share, Some(chord.to_string(each)), None)
+        list.zip(
+          one.chords,
+          progression.shares(list.length(one.chords), capacity),
+        )
+        |> list.map(fn(entry) {
+          Spacer(entry.1, Some(chord.to_string(entry.0)), None)
         }),
       )
     })
@@ -271,6 +271,7 @@ fn build(
   let measures =
     events
     |> into_measures(capacity, #([], 0), [])
+    |> list.map(spell_silences)
     |> list.map(beam_measure(_, capacity))
   let signature = choose_signature(measures, hint)
 
@@ -332,6 +333,69 @@ fn with_positions(events: List(Event)) -> List(#(Int, Event)) {
       #([#(at, one), ..done], at + duration_of(one))
     })
   list.reverse(found)
+}
+
+/// Rewrite silences as durations that can actually be written down.
+///
+/// Five eighths is not a rest, it is a rest and a rest: notation has symbols
+/// for an eighth, a quarter, a dotted quarter and so on, and nothing in
+/// between. Off the beat only the short ones read properly, so a silence
+/// starting mid beat begins by filling out the beat it is in.
+fn spell_silences(subject: Measure) -> Measure {
+  Measure(
+    with_positions(subject.events)
+    |> list.flat_map(fn(entry) {
+      let #(at, event) = entry
+      case event {
+        Rest(length, symbol, annotation) ->
+          writable(at, length)
+          |> list.index_map(fn(piece, index) {
+            case index {
+              // Whatever was attached belongs to the first piece only.
+              0 -> Rest(piece, symbol, annotation)
+              _ -> Rest(piece, None, None)
+            }
+          })
+        Spacer(length, symbol, annotation) ->
+          writable(at, length)
+          |> list.index_map(fn(piece, index) {
+            case index {
+              0 -> Spacer(piece, symbol, annotation)
+              _ -> Spacer(piece, None, None)
+            }
+          })
+        other -> [other]
+      }
+    }),
+  )
+}
+
+fn writable(at: Int, length: Int) -> List(Int) {
+  case length <= 0 {
+    True -> []
+    False -> {
+      let piece = longest_fitting(choices(at), length)
+      [piece, ..writable(at + piece, length - piece)]
+    }
+  }
+}
+
+fn choices(at: Int) -> List(Int) {
+  case at % 2 == 0 {
+    True -> [8, 6, 4, 3, 2, 1]
+    False -> [1]
+  }
+}
+
+fn longest_fitting(sizes: List(Int), length: Int) -> Int {
+  case sizes {
+    [] -> 1
+    [size, ..rest] ->
+      case size <= length {
+        True -> size
+        False -> longest_fitting(rest, length)
+      }
+  }
 }
 
 // --- Beaming -----------------------------------------------------------------
