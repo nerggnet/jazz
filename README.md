@@ -117,12 +117,36 @@ double chromatics and the 1235 pattern. `--seed` makes any line reproducible,
 on either compilation target. Lines are generated inside the middle two octaves
 of whichever horn is chosen, so what comes out is playable.
 
-Changes can also be given directly:
+### Typing out changes
+
+Both `lick` and `analyse` take changes written the way they are on a chart,
+so a line can be generated over a whole tune rather than a four bar cell:
+
+```sh
+gleam run -- lick "|: Dm7 | G7 | Em7 | A7 | Dm7 | G7 | Cmaj7 | Cmaj7 :|" --for alto
+gleam run -- analyse "| Fmaj7 | Fm7 | Bb7 | Cmaj7 |"
+```
+
+Bars are separated by `|`, and chords sharing a bar share it evenly. `%` holds
+the bar before it, and anything between `|:` and `:|` is played twice — so
+those eight bars above become sixteen to play over. Newlines are just spaces,
+which means a tune can be pasted in the shape it was written:
+
+```
+|: Cm7    | Fm7     | Cm7  | Cm7 :|
+ | Abmaj7 | G7alt   | Cm7  | Am7b5 D7alt |
+```
+
+With no bar lines at all, each chord gets a bar of its own, so the short way
+still means what it looks like:
 
 ```sh
 gleam run -- lick Dm7 G7 Cmaj7 --for tenor --seed 12
-gleam run -- lick "Cm7b5" "F7alt" "Bbm6" --for alto --level advanced
 ```
+
+There is no library of standards here, for the same reason there is no library
+of licks: the changes to somebody's tune are theirs. What is here is the
+notation for writing them down.
 
 ### Reading changes back
 
@@ -284,7 +308,7 @@ share everything behind.
 | `jazz/instrument` | Transposing instruments, their ranges, concert vs written |
 | `jazz/scale` | Scale formulas, names, and what each one is for |
 | `jazz/chord` | Chord symbols in and out, chord-scale suggestions |
-| `jazz/progression` | Progressions built from degrees, roman numerals, key cycles |
+| `jazz/progression` | Progressions built from degrees, and changes read off a chart |
 | `jazz/lick` | Line generation: targets, approaches and connective devices |
 | `jazz/analysis` | Finding two-fives, substitutes and guide tone lines in changes |
 | `jazz/notation` | Scores: bars, beams, key signatures, which accidentals print |

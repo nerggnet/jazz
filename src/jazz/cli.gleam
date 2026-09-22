@@ -16,7 +16,7 @@ import jazz/instrument.{type Instrument}
 import jazz/lick
 import jazz/notation
 import jazz/pitch.{type PitchClass}
-import jazz/progression
+import jazz/progression.{type Progression}
 import jazz/render/abc
 import jazz/render/text
 import jazz/scale
@@ -148,118 +148,102 @@ fn lick_command(args: List(String)) -> Result(String, String) {
       )
     None -> Ok(1)
   })
-  use requested <- result.try(case flag(options, "key") {
-    Some(text) -> result.map(pitch.parse_class(text), Some)
-    None -> Ok(None)
-  })
-
-  let #(low, high) = instrument.comfortable_range(player)
-  let settings = lick.Options(level, seed, low, high)
-  let key = option.unwrap(requested, pitch.natural(pitch.C))
+  use requested <- result.try(key_option(options))
 
   case options.positional {
     [] ->
       Error(
-        "usage: jazz lick <progression|chords...> [--key <key>] [--level <level>] [--seed <n>]",
+        "usage: jazz lick <progression|changes> [--key <key>] [--level <level>] [--seed <n>]",
       )
-    [single] ->
-      case progression.build(single, key) {
-        Ok(built) ->
-          Ok(draw_lick(
-            lick.over_progression(built, settings),
-            built.name <> " in " <> pitch.class_to_string(built.key),
-            built.key,
-            player,
-            format,
-          ))
-        Error(unknown) ->
-          case chord.parse(single) {
-            Ok(_) -> custom_lick([single], requested, settings, player, format)
-            Error(_) -> Error(unknown)
-          }
-      }
-    many -> custom_lick(many, requested, settings, player, format)
+    positional -> {
+      use built <- result.try(changes(positional, requested))
+      let #(low, high) = instrument.comfortable_range(player)
+      let line =
+        lick.over_progression(built, lick.Options(level, seed, low, high))
+      Ok(draw_lick(line, heading(built), built.key, player, format))
+    }
   }
 }
 
-/// A line over whatever changes were typed on the command line, a bar each.
 fn draw_lick(
   line: lick.Line,
-  heading: String,
+  title: String,
   key: PitchClass,
   player: Instrument,
   format: Format,
 ) -> String {
   case format {
-    Text -> text.lick_view(line, heading, player, key)
-    Abc -> abc.render(notation.from_line(line, heading, key, player))
+    Text -> text.lick_view(line, title, player, key)
+    Abc -> abc.render(notation.from_line(line, title, key, player))
   }
-}
-
-fn custom_lick(
-  symbols: List(String),
-  requested: Option(PitchClass),
-  settings: lick.Options,
-  player: Instrument,
-  format: Format,
-) -> Result(String, String) {
-  use chords <- result.try(list.try_map(symbols, chord.parse))
-  // Without a key given, assume the changes end where they mean to.
-  let key = case requested, list.last(chords) {
-    Some(given), _ -> given
-    None, Ok(final) -> final.root
-    None, Error(_) -> pitch.natural(pitch.C)
-  }
-  let line =
-    lick.over_chords(list.map(chords, fn(one) { #(one, lick.bar) }), settings)
-  Ok(draw_lick(line, string.join(symbols, " "), key, player, format))
 }
 
 fn analysis_command(args: List(String)) -> Result(String, String) {
   use options <- result.try(parse(args))
   use player <- result.try(instrument_option(options))
-  use requested <- result.try(case flag(options, "key") {
-    Some(text) -> result.map(pitch.parse_class(text), Some)
-    None -> Ok(None)
-  })
-  let key = option.unwrap(requested, pitch.natural(pitch.C))
+  use requested <- result.try(key_option(options))
 
   case options.positional {
     [] ->
       Error(
-        "usage: jazz analyse <progression|chords...> [--key <key>] [--for <instrument>]",
+        "usage: jazz analyse <progression|changes> [--key <key>] [--for <instrument>]",
       )
-    [single] ->
-      case progression.build(single, key) {
-        Ok(built) ->
-          Ok(text.analysis_view(
-            progression.chords(built),
-            built.name <> " in " <> pitch.class_to_string(built.key),
-            player,
-            built.key,
-          ))
-        Error(unknown) ->
-          case chord.parse(single) {
-            Ok(_) -> custom_analysis([single], requested, player)
-            Error(_) -> Error(unknown)
-          }
-      }
-    many -> custom_analysis(many, requested, player)
+    positional -> {
+      use built <- result.try(changes(positional, requested))
+      Ok(text.analysis_view(
+        progression.chords(built),
+        heading(built),
+        player,
+        built.key,
+      ))
+    }
   }
 }
 
-fn custom_analysis(
-  symbols: List(String),
+/// Changes from the catalogue, or typed out on the command line.
+///
+/// A single word is tried as a catalogue name first, because `blues` is a
+/// progression and not a chord. Anything else is read as changes, so bar
+/// lines and repeats work the same here as they do anywhere else.
+fn changes(
+  positional: List(String),
   requested: Option(PitchClass),
-  player: Instrument,
-) -> Result(String, String) {
-  use chords <- result.try(list.try_map(symbols, chord.parse))
-  let key = case requested, list.last(chords) {
-    Some(given), _ -> given
-    None, Ok(final) -> final.root
-    None, Error(_) -> pitch.natural(pitch.C)
+) -> Result(Progression, String) {
+  let key = option.unwrap(requested, pitch.natural(pitch.C))
+  case positional {
+    [single] ->
+      case progression.build(single, key) {
+        Ok(built) -> Ok(built)
+        Error(unknown) ->
+          case progression.parse(single) {
+            Ok(built) -> Ok(in_key(built, requested))
+            // If it is not changes either, the catalogue has the more
+            // useful complaint.
+            Error(_) -> Error(unknown)
+          }
+      }
+    many ->
+      progression.parse(string.join(many, " "))
+      |> result.map(in_key(_, requested))
   }
-  Ok(text.analysis_view(chords, string.join(symbols, " "), player, key))
+}
+
+fn in_key(built: Progression, requested: Option(PitchClass)) -> Progression {
+  case requested {
+    Some(key) -> progression.Progression(..built, key: key)
+    None -> built
+  }
+}
+
+fn heading(built: Progression) -> String {
+  built.name <> " in " <> pitch.class_to_string(built.key)
+}
+
+fn key_option(options: Options) -> Result(Option(PitchClass), String) {
+  case flag(options, "key") {
+    Some(text) -> result.map(pitch.parse_class(text), Some)
+    None -> Ok(None)
+  }
 }
 
 fn transpose_command(args: List(String)) -> Result(String, String) {
@@ -380,8 +364,8 @@ USAGE
   jazz scale <root> <scale> [options]
   jazz chord <symbol> [options]
   jazz progression <name> [options]
-  jazz lick <progression|chords...> [options]
-  jazz analyse <progression|chords...> [options]
+  jazz lick <progression|changes> [options]
+  jazz analyse <progression|changes> [options]
   jazz transpose <notes...> --from <instrument> --to <instrument>
   jazz list scales|instruments|progressions
 
@@ -402,6 +386,7 @@ EXAMPLES
   jazz progression blues --key Bb --for tenor
   jazz lick ii-V-I --key C --for alto --level intermediate
   jazz lick Dm7 G7 Cmaj7 --for tenor --seed 12
+  jazz lick \"|: Dm7 | G7 | Cmaj7 | Cmaj7 :|\" --for alto
   jazz scale C bebop-dominant --for tenor --format abc
   jazz lick blues --key Bb --for tenor --format abc > blues.abc
   jazz analyse blues --key F
@@ -411,6 +396,10 @@ EXAMPLES
 NOTES
   Everything is stored at concert pitch and transposed when it is printed, so
   --key always means the concert key, whatever horn you are holding.
+
+  Changes are written as they are on a chart: bars separated by |, chords
+  sharing a bar separated by spaces, % to hold the bar before, and |: :| for
+  a repeat. With no bar lines, each chord gets a bar of its own.
 
   Chord symbols accept the usual dialects: Cm7, Cmi7, C-7, CM7, C^7, C\u{0394}7,
   C\u{00F8}, Cdim7, C7alt, C7b9#11, Cm(maj7), C6/9, Am7/D. Case matters in one

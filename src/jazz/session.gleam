@@ -9,9 +9,7 @@
 //// from flags; a session is the same state held still and poked at. Both sit
 //// on the same theory underneath.
 
-import gleam/list
-import gleam/string
-import jazz/chord.{type Chord}
+import jazz/chord
 import jazz/instrument.{type Instrument}
 import jazz/internal/random
 import jazz/interval
@@ -134,6 +132,27 @@ pub fn update(session: Session, action: Action) -> Session {
 
 // --- Showing -----------------------------------------------------------------
 
+/// The changes the session is pointed at: one from the catalogue, or whatever
+/// has been typed in.
+pub fn changes(session: Session) -> Result(Progression, String) {
+  case typing_changes(session) {
+    True -> progression.parse(session.changes_text)
+    False -> progression.build(session.progression_id, session.key)
+  }
+}
+
+/// Whether the changes are being typed rather than picked.
+pub fn typing_changes(session: Session) -> Bool {
+  session.progression_id == typed
+}
+
+/// The name of the entry that means "the ones I typed".
+pub const typed = "typed"
+
+fn heading(built: Progression) -> String {
+  built.name <> " in " <> pitch.class_to_string(built.key)
+}
+
 pub fn panel(session: Session) -> Panel {
   case session.view {
     ScaleView -> {
@@ -155,7 +174,7 @@ pub fn panel(session: Session) -> Panel {
       }
 
     ProgressionView ->
-      case progression.build(session.progression_id, session.key) {
+      case changes(session) {
         Error(message) -> Problem(message)
         Ok(built) ->
           Panel(
@@ -165,16 +184,15 @@ pub fn panel(session: Session) -> Panel {
       }
 
     LineView ->
-      case progression.build(session.progression_id, session.key) {
+      case changes(session) {
         Error(message) -> Problem(message)
         Ok(built) -> {
           let line = lick.over_progression(built, options(session))
-          let heading = built.name <> " in " <> pitch.class_to_string(built.key)
           Panel(
-            text.lick_view(line, heading, session.player, built.key),
+            text.lick_view(line, heading(built), session.player, built.key),
             abc.render(notation.from_line(
               line,
-              heading,
+              heading(built),
               built.key,
               session.player,
             )),
@@ -183,20 +201,17 @@ pub fn panel(session: Session) -> Panel {
       }
 
     AnalysisView ->
-      case read_changes(session.changes_text) {
+      case changes(session) {
         Error(message) -> Problem(message)
-        Ok(#(chords, key)) ->
+        Ok(built) ->
           Panel(
             text.analysis_view(
-              chords,
-              session.changes_text,
+              progression.chords(built),
+              heading(built),
               session.player,
-              key,
+              built.key,
             ),
-            abc.render(notation.from_progression(
-              as_chart(chords, key, session.changes_text),
-              session.player,
-            )),
+            abc.render(notation.from_progression(built, session.player)),
           )
       }
   }
@@ -206,42 +221,6 @@ pub fn panel(session: Session) -> Panel {
 fn options(session: Session) -> lick.Options {
   let #(low, high) = instrument.comfortable_range(session.player)
   lick.Options(session.level, session.seed, low, high)
-}
-
-/// Chord symbols separated by spaces, as they would be typed off a chart.
-fn read_changes(text: String) -> Result(#(List(Chord), PitchClass), String) {
-  let symbols =
-    text
-    |> string.replace("|", " ")
-    |> string.split(" ")
-    |> list.filter(fn(one) { one != "" })
-  case symbols {
-    [] -> Error("type some chord symbols, such as `Dm7 G7 Cmaj7`")
-    _ ->
-      case list.try_map(symbols, chord.parse) {
-        Error(message) -> Error(message)
-        Ok(chords) ->
-          case list.last(chords) {
-            // Changes usually end where they mean to.
-            Ok(final) -> Ok(#(chords, final.root))
-            Error(_) -> Error("type some chord symbols")
-          }
-      }
-  }
-}
-
-fn as_chart(
-  chords: List(Chord),
-  key: PitchClass,
-  title: String,
-) -> Progression {
-  progression.Progression(
-    id: "changes",
-    name: title,
-    note: "",
-    key: key,
-    bars: list.map(chords, fn(one) { progression.Bar([one]) }),
-  )
 }
 
 // --- Choices a front end can offer -------------------------------------------
@@ -265,11 +244,13 @@ pub fn keys(session: Session) -> List(PitchClass) {
   progression.cycle_of_fourths(session.key)
 }
 
-/// Whether the current view pays any attention to the key.
-pub fn uses_key(view: View) -> Bool {
-  case view {
-    ScaleView | ProgressionView | LineView -> True
-    ChordView | AnalysisView -> False
+/// Whether the key control does anything from here. Typed changes carry their
+/// own key, so the picker has nothing to say about them.
+pub fn uses_key(session: Session) -> Bool {
+  case session.view {
+    ScaleView -> True
+    ProgressionView | LineView | AnalysisView -> !typing_changes(session)
+    ChordView -> False
   }
 }
 

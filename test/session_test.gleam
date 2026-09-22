@@ -138,8 +138,14 @@ pub fn controls_can_hand_back_strings_test() {
 }
 
 pub fn views_declare_what_they_need_test() {
-  assert session.uses_key(session.ScaleView)
-  assert !session.uses_key(session.ChordView)
+  assert session.uses_key(showing(session.ScaleView))
+  assert !session.uses_key(showing(session.ChordView))
+  // Typed changes bring their own key, so the picker has nothing to say.
+  assert session.uses_key(showing(session.LineView))
+  assert !session.uses_key(session.update(
+    showing(session.LineView),
+    session.ChooseProgression(session.typed),
+  ))
   assert session.generates(session.LineView)
   assert !session.generates(session.ScaleView)
   assert list.length(session.all_views()) == 5

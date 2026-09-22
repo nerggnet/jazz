@@ -119,9 +119,9 @@ fn controls(model: Model) -> Element(Msg) {
   let particular = case model.session.view {
     session.ScaleView -> [keys(model), scales(model)]
     session.ChordView -> [chord_box(model)]
-    session.ProgressionView -> [keys(model), changes(model)]
-    session.LineView -> [keys(model), changes(model), levels(model), again()]
-    session.AnalysisView -> [changes_box(model)]
+    session.ProgressionView -> source(model, [])
+    session.LineView -> source(model, [levels(model), again()])
+    session.AnalysisView -> source(model, [])
   }
   html.div([attribute.class("controls")], list.append(shared, particular))
 }
@@ -189,20 +189,39 @@ fn scales(model: Model) -> Element(Msg) {
   )
 }
 
+/// Where the changes come from. Typed ones carry their own key, so the key
+/// picker steps aside for the box.
+fn source(model: Model, rest: List(Element(Msg))) -> List(Element(Msg)) {
+  let picked = case session.typing_changes(model.session) {
+    True -> [changes(model), changes_box(model)]
+    False -> [keys(model), changes(model)]
+  }
+  list.append(picked, rest)
+}
+
 fn changes(model: Model) -> Element(Msg) {
   field(
     "Changes",
     html.select(
       [event.on_change(fn(id) { Did(session.ChooseProgression(id)) })],
-      list.map(progression.catalogue(), fn(one) {
+      [
         html.option(
           [
-            attribute.value(one.0),
-            attribute.selected(one.0 == model.session.progression_id),
+            attribute.value(session.typed),
+            attribute.selected(session.typing_changes(model.session)),
           ],
-          one.0,
-        )
-      }),
+          "typed in",
+        ),
+        ..list.map(progression.catalogue(), fn(one) {
+          html.option(
+            [
+              attribute.value(one.0),
+              attribute.selected(one.0 == model.session.progression_id),
+            ],
+            one.0,
+          )
+        })
+      ],
     ),
   )
 }
@@ -251,20 +270,32 @@ fn chord_box(model: Model) -> Element(Msg) {
 }
 
 fn changes_box(model: Model) -> Element(Msg) {
-  field(
-    "Changes",
+  named_field(
+    "field grow",
+    "Bars, separated by |  (Enter to apply)",
     html.input([
-      attribute.class("wide"),
+      attribute.class("wide changes"),
       attribute.type_("text"),
       attribute.value(model.session.changes_text),
-      attribute.placeholder("Dm7 G7 Cmaj7"),
-      event.on_input(fn(text) { Did(session.TypeChanges(text)) }),
+      attribute.placeholder("| Dm7 | G7 | Cmaj7 | Cmaj7 |"),
+      // On change rather than on input: a whole tune is a lot of keystrokes,
+      // and regenerating the line and engraving the score after every one of
+      // them makes typing feel like wading.
+      event.on_change(fn(text) { Did(session.TypeChanges(text)) }),
     ]),
   )
 }
 
 fn field(name: String, control: Element(Msg)) -> Element(Msg) {
-  html.label([attribute.class("field")], [
+  named_field("field", name, control)
+}
+
+fn named_field(
+  class: String,
+  name: String,
+  control: Element(Msg),
+) -> Element(Msg) {
+  html.label([attribute.class(class)], [
     html.span([attribute.class("name")], [html.text(name)]),
     control,
   ])

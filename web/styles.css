@@ -152,6 +152,17 @@ input.wide {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
+/* A whole tune needs room, so the changes box takes whatever is left. */
+.field.grow {
+  flex: 1 1 320px;
+  min-width: 240px;
+}
+
+input.changes {
+  width: 100%;
+  min-width: 0;
+}
+
 select:focus-visible,
 input:focus-visible,
 button:focus-visible {
@@ -282,5 +293,8 @@ button.primary:hover {
   }
   input.wide {
     min-width: 16ch;
+  }
+  .field.grow {
+    flex-basis: 100%;
   }
 }

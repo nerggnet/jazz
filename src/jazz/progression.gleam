@@ -5,8 +5,10 @@
 //// point: the reason to own a tool like this is to practise something round
 //// the cycle without copying it out by hand twelve times.
 
+import gleam/int
 import gleam/list
-import gleam/option.{None}
+import gleam/option.{type Option, None, Some}
+import gleam/result
 import gleam/string
 import jazz/chord.{
   type Chord, Chord, DiminishedSeventh, DiminishedTriad, MajorSeventh,
@@ -252,6 +254,180 @@ pub fn tritone_sub(key: PitchClass) -> Progression {
       Bar([maj7(key)]),
     ],
   )
+}
+
+// --- Reading changes ---------------------------------------------------------
+
+type Token {
+  Word(String)
+  BarLine
+  RepeatStart
+  RepeatEnd
+}
+
+/// Parse changes the way they are written on a chart.
+///
+/// Bars are separated by `|`, and chords sharing a bar share it evenly. `%`
+/// holds the bar before it. Anything between `|:` and `:|` is played twice.
+///
+///     | Dm7 | G7 | Cmaj7 | Cmaj7 |
+///     |: Cm7 F7 | Bbmaj7 | Am7b5 D7alt | Gm7 :|
+///
+/// With no bar lines at all, each chord gets a bar of its own, so a quick
+/// `Dm7 G7 Cmaj7` still means what it looks like.
+///
+/// The key is taken from the last chord, because changes usually end where
+/// they mean to.
+pub fn parse(text: String) -> Result(Progression, String) {
+  use tokens <- result.try(scan(text, []))
+  use bars <- result.try(case list.any(tokens, is_bar_line) {
+    True -> assemble(tokens, [], [], None)
+    False -> one_chord_each(tokens, [])
+  })
+  case list.last(list.flat_map(bars, fn(one) { one.chords })) {
+    Error(_) -> Error("no chords found")
+    Ok(final) ->
+      Ok(Progression(
+        id: "typed",
+        name: "Changes",
+        note: "",
+        key: final.root,
+        bars: bars,
+      ))
+  }
+}
+
+fn is_bar_line(token: Token) -> Bool {
+  case token {
+    Word(_) -> False
+    _ -> True
+  }
+}
+
+fn one_chord_each(
+  tokens: List(Token),
+  bars: List(Bar),
+) -> Result(List(Bar), String) {
+  case tokens {
+    [] -> Ok(bars)
+    [Word(symbol), ..rest] ->
+      case chord.parse(symbol) {
+        Ok(one) -> one_chord_each(rest, list.append(bars, [Bar([one])]))
+        Error(message) -> Error(message)
+      }
+    [_, ..rest] -> one_chord_each(rest, bars)
+  }
+}
+
+// --- Scanning ---
+
+fn scan(text: String, acc: List(Token)) -> Result(List(Token), String) {
+  case string.pop_grapheme(text) {
+    Error(_) -> Ok(list.reverse(acc))
+    Ok(#(" ", rest))
+    | Ok(#("\n", rest))
+    | Ok(#("\t", rest))
+    | Ok(#("\r", rest)) -> scan(rest, acc)
+    Ok(#("|", rest)) ->
+      case string.pop_grapheme(rest) {
+        // `|:` opens a repeat; `||` and `|]` are just heavier bar lines.
+        Ok(#(":", more)) -> scan(more, [RepeatStart, ..acc])
+        Ok(#("|", more)) | Ok(#("]", more)) -> scan(more, [BarLine, ..acc])
+        _ -> scan(rest, [BarLine, ..acc])
+      }
+    Ok(#(":", rest)) ->
+      case string.pop_grapheme(rest) {
+        Ok(#("|", more)) -> scan(more, [RepeatEnd, ..acc])
+        _ ->
+          Error("a `:` only means anything beside a bar line, as `|:` or `:|`")
+      }
+    Ok(_) -> {
+      let #(word, rest) = take_word(text, "")
+      scan(rest, [Word(word), ..acc])
+    }
+  }
+}
+
+fn take_word(text: String, acc: String) -> #(String, String) {
+  case string.pop_grapheme(text) {
+    Error(_) -> #(acc, "")
+    Ok(#(" ", _))
+    | Ok(#("\n", _))
+    | Ok(#("\t", _))
+    | Ok(#("\r", _))
+    | Ok(#("|", _))
+    | Ok(#(":", _)) -> #(acc, text)
+    Ok(#(grapheme, rest)) -> take_word(rest, acc <> grapheme)
+  }
+}
+
+// --- Assembling ---
+
+fn assemble(
+  tokens: List(Token),
+  current: List(String),
+  bars: List(Bar),
+  repeat: Option(Int),
+) -> Result(List(Bar), String) {
+  case tokens {
+    [] ->
+      case repeat {
+        Some(_) -> Error("a `|:` was opened and never closed with `:|`")
+        None -> flush(current, bars)
+      }
+    [Word(symbol), ..rest] ->
+      assemble(rest, list.append(current, [symbol]), bars, repeat)
+    [BarLine, ..rest] -> {
+      use done <- result.try(flush(current, bars))
+      assemble(rest, [], done, repeat)
+    }
+    [RepeatStart, ..rest] ->
+      case repeat {
+        Some(_) -> Error("one repeat cannot sit inside another")
+        None -> {
+          use done <- result.try(flush(current, bars))
+          assemble(rest, [], done, Some(list.length(done)))
+        }
+      }
+    [RepeatEnd, ..rest] ->
+      case repeat {
+        None -> Error("found `:|` with no `|:` to go with it")
+        Some(from) -> {
+          use done <- result.try(flush(current, bars))
+          assemble(rest, [], list.append(done, list.drop(done, from)), None)
+        }
+      }
+  }
+}
+
+/// Close off a bar.
+///
+/// Nothing between two bar lines makes no bar at all, because a trailing `|`
+/// and a double bar line look exactly like an empty bar and are far more
+/// common. `%` is the way to say hold.
+fn flush(current: List(String), bars: List(Bar)) -> Result(List(Bar), String) {
+  let at = list.length(bars) + 1
+  case current, list.last(bars) {
+    [], _ -> Ok(bars)
+    ["%"], Error(_) ->
+      Error("bar 1: `%` repeats the bar before it, and there is none")
+    ["%"], Ok(previous) -> Ok(list.append(bars, [previous]))
+    words, _ ->
+      case list.contains(words, "%") {
+        True ->
+          Error(
+            "bar "
+            <> int.to_string(at)
+            <> ": `%` stands for a whole bar on its own",
+          )
+        False ->
+          case list.try_map(words, chord.parse) {
+            Ok(chords) -> Ok(list.append(bars, [Bar(chords)]))
+            Error(message) ->
+              Error("bar " <> int.to_string(at) <> ": " <> message)
+          }
+      }
+  }
 }
 
 // --- Views -------------------------------------------------------------------
