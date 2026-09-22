@@ -15,7 +15,11 @@ fn concert() -> instrument.Instrument {
 }
 
 fn scale_score(root: PitchClass, kind: scale.ScaleKind) -> notation.Score {
-  notation.from_scale(scale.Scale(root, kind), concert())
+  notation.from_scale(
+    scale.Scale(root, kind),
+    concert(),
+    notation.default_tempo,
+  )
 }
 
 /// Everything after the K: header line, which is the music itself.
@@ -48,7 +52,11 @@ pub fn the_signature_is_the_one_with_least_ink_test() {
   // of its own. For alto that is written B Dorian, which is A major.
   assert scale_score(PitchClass(D, 0), scale.Dorian).signature == 0
   let assert Ok(alto) = instrument.find("alto")
-  assert notation.from_scale(scale.Scale(PitchClass(D, 0), scale.Dorian), alto).signature
+  assert notation.from_scale(
+      scale.Scale(PitchClass(D, 0), scale.Dorian),
+      alto,
+      notation.default_tempo,
+    ).signature
     == 3
   // Five flats leaves the altered scale needing only one accidental.
   assert scale_score(PitchClass(C, 0), scale.Altered).signature == -5
@@ -56,7 +64,8 @@ pub fn the_signature_is_the_one_with_least_ink_test() {
 
 pub fn a_chart_with_no_notes_keeps_its_own_key_test() {
   let assert Ok(built) = progression.build("ii-V-I", PitchClass(F, 0))
-  assert notation.from_progression(built, concert()).signature == -1
+  assert notation.from_progression(built, concert(), notation.default_tempo).signature
+    == -1
 }
 
 // --- Accidentals -------------------------------------------------------------
@@ -126,18 +135,23 @@ pub fn a_held_note_does_not_beam_test() {
 pub fn abc_octaves_test() {
   // The octave containing middle C is written in capitals with no marks.
   let assert Ok(cmaj7) = chord.parse("Cmaj7")
-  assert tune(abc.render(notation.from_chord(cmaj7, concert())))
+  assert tune(
+      abc.render(notation.from_chord(cmaj7, concert(), notation.default_tempo)),
+    )
     == "\"Cmaj7\"CEGB GE C2 |]"
   // The octave above is lower case, and each one after that takes an
   // apostrophe. Baritone reads more than an octave above where it sounds.
   let assert Ok(bari) = instrument.find("bari")
-  assert tune(abc.render(notation.from_chord(cmaj7, bari)))
+  assert tune(
+      abc.render(notation.from_chord(cmaj7, bari, notation.default_tempo)),
+    )
     == "\"Amaj7\"Aceg ec A2 |]"
   let assert Ok(alto) = instrument.find("alto")
   assert tune(
       abc.render(notation.from_scale(
         scale.Scale(PitchClass(F, 1), scale.Lydian),
         alto,
+        notation.default_tempo,
       )),
     )
     == "efga bc'd'e' | d'c'ba gf e2 |]"
@@ -145,13 +159,22 @@ pub fn abc_octaves_test() {
 
 pub fn chord_symbols_are_quoted_test() {
   let assert Ok(built) = progression.build("ii-V-I", PitchClass(C, 0))
-  assert tune(abc.render(notation.from_progression(built, concert())))
+  assert tune(
+      abc.render(notation.from_progression(
+        built,
+        concert(),
+        notation.default_tempo,
+      )),
+    )
     == "\"Dm7\"x8 | \"G7\"x8 | \"Cmaj7\"x8 | \"Cmaj7\"x8 |]"
 }
 
 pub fn a_chart_has_one_bar_per_bar_test() {
   let assert Ok(built) = progression.build("blues", PitchClass(F, 0))
-  assert list.length(notation.from_progression(built, concert()).measures) == 12
+  assert list.length(
+      notation.from_progression(built, concert(), notation.default_tempo).measures,
+    )
+    == 12
 }
 
 pub fn every_duration_can_be_written_down_test() {
@@ -163,7 +186,14 @@ pub fn every_duration_can_be_written_down_test() {
   list.each([lick.Beginner, lick.Intermediate, lick.Advanced], fn(level) {
     list.each([1, 2, 3, 5, 8, 13], fn(seed) {
       let line = lick.over_progression(changes, lick.options(level, seed))
-      let score = notation.from_line(line, "test", PitchClass(C, 0), concert())
+      let score =
+        notation.from_line(
+          line,
+          "test",
+          PitchClass(C, 0),
+          concert(),
+          notation.default_tempo,
+        )
       list.each(score.measures, fn(measure) {
         let #(_, total) =
           list.fold(measure.events, #(0, 0), fn(state, event) {
@@ -189,7 +219,8 @@ pub fn a_bar_shared_three_ways_still_adds_up_test() {
   assert progression.shares(0, 8) == []
 
   let assert Ok(changes) = progression.parse("| Dm7 G7 Cmaj7 | Cmaj7 |")
-  let score = notation.from_progression(changes, concert())
+  let score =
+    notation.from_progression(changes, concert(), notation.default_tempo)
   list.each(score.measures, fn(measure) {
     let total =
       list.fold(measure.events, 0, fn(sum, event) {
@@ -210,7 +241,12 @@ pub fn exercises_land_on_the_horn_test() {
   list.each(instrument.all(), fn(player) {
     list.each([scale.Ionian, scale.Altered, scale.BebopDominant], fn(kind) {
       list.each(progression.cycle_of_fourths(PitchClass(C, 0)), fn(key) {
-        let score = notation.from_scale(scale.Scale(key, kind), player)
+        let score =
+          notation.from_scale(
+            scale.Scale(key, kind),
+            player,
+            notation.default_tempo,
+          )
         list.each(notation.pitches(score), fn(one) {
           assert instrument.in_range(player, one)
         })
@@ -227,17 +263,18 @@ pub fn a_score_says_how_fast_it_goes_test() {
   let assert Ok(built) = progression.build("ii-V-I", PitchClass(C, 0))
   let scores = [
     scale_score(PitchClass(C, 0), scale.Ionian),
-    notation.from_chord(cmaj7, concert()),
-    notation.from_progression(built, concert()),
+    notation.from_chord(cmaj7, concert(), notation.default_tempo),
+    notation.from_progression(built, concert(), notation.default_tempo),
     notation.from_line(
       lick.over_progression(built, lick.options(lick.Beginner, 1)),
       "test",
       PitchClass(C, 0),
       concert(),
+      notation.default_tempo,
     ),
   ]
   list.each(scores, fn(score) {
-    assert score.tempo == Some(notation.tempo)
+    assert score.tempo == Some(notation.default_tempo)
     assert string.contains(abc.render(score), "Q:1/4=")
   })
 }
@@ -248,6 +285,7 @@ pub fn the_header_says_what_it_is_test() {
     abc.render(notation.from_scale(
       scale.Scale(PitchClass(D, 0), scale.Dorian),
       alto,
+      notation.default_tempo,
     ))
   assert string.contains(text, "X:1")
   assert string.contains(text, "T:B Dorian")
@@ -260,7 +298,14 @@ pub fn the_header_says_what_it_is_test() {
 pub fn lines_carry_their_changes_test() {
   let assert Ok(built) = progression.build("ii-V-I", PitchClass(C, 0))
   let line = lick.over_progression(built, lick.options(lick.Beginner, 1))
-  let score = notation.from_line(line, "test", PitchClass(C, 0), concert())
+  let score =
+    notation.from_line(
+      line,
+      "test",
+      PitchClass(C, 0),
+      concert(),
+      notation.default_tempo,
+    )
   let symbols =
     notation.events(score)
     |> list.filter_map(fn(event) {

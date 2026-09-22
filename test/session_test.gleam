@@ -192,6 +192,18 @@ pub fn a_made_up_tune_follows_the_key_test() {
   assert session.uses_key(subject)
 }
 
+pub fn the_tempo_can_be_changed_test() {
+  let subject = session.update(session.new(), session.ChooseTempoNamed("80"))
+  assert subject.tempo == 80
+  // The score carries it, which is what the playhead and the synth both read.
+  let assert session.Panel(_, abc) = session.panel(subject)
+  assert string.contains(abc, "Q:1/4=80")
+  // And nonsense leaves it alone rather than producing a score nobody can play.
+  assert session.update(subject, session.ChooseTempoNamed("0")) == subject
+  assert session.update(subject, session.ChooseTempoNamed("9000")) == subject
+  assert session.update(subject, session.ChooseTempoNamed("presto")) == subject
+}
+
 pub fn views_declare_what_they_need_test() {
   assert session.uses_key(showing(session.ScaleView))
   assert !session.uses_key(showing(session.ChordView))

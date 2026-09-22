@@ -72,12 +72,14 @@ pub type Score {
 }
 
 /// How many units fit in one bar.
-/// The tempo everything is written at, in quarter notes a minute.
+/// The tempo to write at when nobody has said otherwise, in quarter notes a
+/// minute.
 ///
-/// This belongs in the music rather than in whatever is playing it. A score
-/// with no tempo leaves every reader to invent one, and two readers inventing
-/// different ones is how a playhead ends up running ahead of the sound.
-pub const tempo = 126
+/// A tempo belongs in the music rather than in whatever is playing it. A score
+/// without one leaves every reader to invent it, and two readers inventing
+/// different ones is how a playhead ends up running ahead of the sound, so it
+/// is a parameter rather than something a caller can forget to set.
+pub const default_tempo = 120
 
 pub fn measure_capacity(score: Score) -> Int {
   score.time.0 * score.unit / score.time.1
@@ -100,7 +102,7 @@ pub fn pitches(score: Score) -> List(Pitch) {
 // --- Building scores ---------------------------------------------------------
 
 /// A scale, up one octave and back down.
-pub fn from_scale(subject: Scale, player: Instrument) -> Score {
+pub fn from_scale(subject: Scale, player: Instrument, tempo: Int) -> Score {
   let shift = instrument.write_interval_for_key(player, subject.root)
   let root = Pitch(subject.root, 4)
   let up =
@@ -116,11 +118,12 @@ pub fn from_scale(subject: Scale, player: Instrument) -> Score {
     subtitle: instrument.label(player),
     events: plain(hold_last(eighths(written(notes, shift, player))), []),
     hint: interval.transpose_class(subject.root, shift),
+    tempo: tempo,
   )
 }
 
 /// A chord, spelled out as an arpeggio up and back down.
-pub fn from_chord(subject: Chord, player: Instrument) -> Score {
+pub fn from_chord(subject: Chord, player: Instrument, tempo: Int) -> Score {
   let shift = instrument.write_interval_for_key(player, subject.root)
   let root = Pitch(subject.root, 4)
   let up =
@@ -137,6 +140,7 @@ pub fn from_chord(subject: Chord, player: Instrument) -> Score {
       #(0, symbol),
     ]),
     hint: written_chord.root,
+    tempo: tempo,
   )
 }
 
@@ -146,6 +150,7 @@ pub fn from_line(
   heading: String,
   key: PitchClass,
   player: Instrument,
+  tempo: Int,
 ) -> Score {
   let shift = instrument.write_interval_for_key(player, key)
   let moved = lick.transpose(line, shift) |> lick.simplify_spelling
@@ -172,11 +177,16 @@ pub fn from_line(
     subtitle: instrument.label(player),
     events: events,
     hint: interval.transpose_class(key, shift),
+    tempo: tempo,
   )
 }
 
 /// A chord chart: bars carrying symbols and no printed notes.
-pub fn from_progression(subject: Progression, player: Instrument) -> Score {
+pub fn from_progression(
+  subject: Progression,
+  player: Instrument,
+  tempo: Int,
+) -> Score {
   let shift = instrument.write_interval_for_key(player, subject.key)
   let moved = progression.transpose(subject, shift)
   let capacity = 8
@@ -276,6 +286,7 @@ fn build(
   subtitle subtitle: String,
   events events: List(Event),
   hint hint: PitchClass,
+  tempo tempo: Int,
 ) -> Score {
   let capacity = 8
   let measures =

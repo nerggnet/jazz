@@ -121,7 +121,12 @@ pub fn a_tune_can_be_played_and_printed_test() {
     list.each([1, 5, 9], fn(seed) {
       let built = made(16, level, seed)
 
-      let chart = abc.render(notation.from_progression(built, alto))
+      let chart =
+        abc.render(notation.from_progression(
+          built,
+          alto,
+          notation.default_tempo,
+        ))
       assert string.contains(chart, "K:")
 
       let #(low, high) = instrument.comfortable_range(alto)

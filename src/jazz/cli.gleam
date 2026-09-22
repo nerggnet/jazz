@@ -53,12 +53,15 @@ fn scale_command(args: List(String)) -> Result(String, String) {
   use options <- result.try(parse(args))
   use player <- result.try(instrument_option(options))
   use format <- result.try(format_option(options))
+  use beats <- result.try(tempo_option(options))
   let draw = fn(subjects) {
     case format {
       Text ->
         subjects |> list.map(text.scale_view(_, player)) |> string.join("\n\n")
       Abc ->
-        subjects |> list.map(notation.from_scale(_, player)) |> abc.render_book
+        subjects
+        |> list.map(notation.from_scale(_, player, beats))
+        |> abc.render_book
     }
   }
   case options.positional {
@@ -83,12 +86,13 @@ fn chord_command(args: List(String)) -> Result(String, String) {
   use options <- result.try(parse(args))
   use player <- result.try(instrument_option(options))
   use format <- result.try(format_option(options))
+  use beats <- result.try(tempo_option(options))
   case options.positional {
     [symbol] -> {
       use parsed <- result.try(chord.parse(symbol))
       Ok(case format {
         Text -> text.chord_view(parsed, player)
-        Abc -> abc.render(notation.from_chord(parsed, player))
+        Abc -> abc.render(notation.from_chord(parsed, player, beats))
       })
     }
     _ -> Error("usage: jazz chord <symbol> [--for <instrument>]")
@@ -99,6 +103,7 @@ fn progression_command(args: List(String)) -> Result(String, String) {
   use options <- result.try(parse(args))
   use player <- result.try(instrument_option(options))
   use format <- result.try(format_option(options))
+  use beats <- result.try(tempo_option(options))
   let draw = fn(subjects) {
     case format {
       Text ->
@@ -107,7 +112,7 @@ fn progression_command(args: List(String)) -> Result(String, String) {
         |> string.join("\n\n")
       Abc ->
         subjects
-        |> list.map(notation.from_progression(_, player))
+        |> list.map(notation.from_progression(_, player, beats))
         |> abc.render_book
     }
   }
@@ -135,6 +140,7 @@ fn lick_command(args: List(String)) -> Result(String, String) {
   use options <- result.try(parse(args))
   use player <- result.try(instrument_option(options))
   use format <- result.try(format_option(options))
+  use beats <- result.try(tempo_option(options))
   use level <- result.try(level_option(options))
   use seed <- result.try(number(options, "seed", 1))
   use requested <- result.try(key_option(options))
@@ -149,7 +155,7 @@ fn lick_command(args: List(String)) -> Result(String, String) {
       let #(low, high) = instrument.comfortable_range(player)
       let line =
         lick.over_progression(built, lick.Options(level, seed, low, high))
-      Ok(draw_lick(line, heading(built), built.key, player, format))
+      Ok(draw_lick(line, heading(built), built.key, player, format, beats))
     }
   }
 }
@@ -160,10 +166,11 @@ fn draw_lick(
   key: PitchClass,
   player: Instrument,
   format: Format,
+  tempo: Int,
 ) -> String {
   case format {
     Text -> text.lick_view(line, title, player, key)
-    Abc -> abc.render(notation.from_line(line, title, key, player))
+    Abc -> abc.render(notation.from_line(line, title, key, player, tempo))
   }
 }
 
@@ -342,6 +349,14 @@ pub type Format {
   Abc
 }
 
+fn tempo_option(options: Options) -> Result(Int, String) {
+  use beats <- result.try(number(options, "tempo", notation.default_tempo))
+  case beats >= 20 && beats <= 400 {
+    True -> Ok(beats)
+    False -> Error("`--tempo` wants a sensible number of beats a minute")
+  }
+}
+
 fn format_option(options: Options) -> Result(Format, String) {
   case flag(options, "format") {
     None -> Ok(Text)
@@ -395,6 +410,7 @@ OPTIONS
   --seed <n>               Pick a different line; the same seed always repeats
   --format <format>        text (default) or abc, for printable notation
   --bars <n>               How long a generated tune should be (default: 16)
+  --tempo <n>              Quarter notes a minute (default: 120)
   --cycle <order>          fourths (default), fifths, or chromatic
 
 EXAMPLES

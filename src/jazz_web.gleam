@@ -116,7 +116,7 @@ fn tabs(model: Model) -> Element(Msg) {
 }
 
 fn controls(model: Model) -> Element(Msg) {
-  let shared = [instruments(model)]
+  let shared = [instruments(model), tempos(model)]
   let particular = case model.session.view {
     session.ScaleView -> [keys(model), scales(model)]
     session.ChordView -> [chord_box(model)]
@@ -143,6 +143,24 @@ fn instruments(model: Model) -> Element(Msg) {
             attribute.selected(one.id == model.session.player.id),
           ],
           instrument.label(one),
+        )
+      }),
+    ),
+  )
+}
+
+fn tempos(model: Model) -> Element(Msg) {
+  field(
+    "Tempo",
+    html.select(
+      [event.on_change(fn(name) { Did(session.ChooseTempoNamed(name)) })],
+      list.map(session.tempo_choices(), fn(one) {
+        html.option(
+          [
+            attribute.value(int.to_string(one)),
+            attribute.selected(one == model.session.tempo),
+          ],
+          int.to_string(one),
         )
       }),
     ),

@@ -43,6 +43,8 @@ pub type Session {
     level: Level,
     /// How long a generated tune should be.
     bars: Int,
+    /// Quarter notes a minute, for whatever is played or printed.
+    tempo: Int,
     seed: Int,
     /// Kept apart from the line's seed so a tune can be kept while the line
     /// over it is rerolled, and the other way round.
@@ -68,6 +70,7 @@ pub type Action {
   ChooseLevel(Level)
   ChooseView(View)
   ChooseBarsNamed(String)
+  ChooseTempoNamed(String)
   NewLine
   NewTune
 }
@@ -88,6 +91,7 @@ pub fn new() -> Session {
     progression_id: "ii-V-I",
     level: lick.Beginner,
     bars: 16,
+    tempo: notation.default_tempo,
     seed: 1,
     tune_seed: 1,
     view: ScaleView,
@@ -147,6 +151,12 @@ pub fn update(session: Session, action: Action) -> Session {
         Ok(bars) if bars > 0 -> Session(..session, bars: bars)
         _ -> session
       }
+    ChooseTempoNamed(name) ->
+      case int.parse(name) {
+        Ok(beats) if beats >= 20 && beats <= 400 ->
+          Session(..session, tempo: beats)
+        _ -> session
+      }
   }
 }
 
@@ -189,6 +199,11 @@ pub fn bar_choices() -> List(Int) {
   [8, 12, 16, 24, 32]
 }
 
+/// Slow enough to learn something on, fast enough to sound like the music.
+pub fn tempo_choices() -> List(Int) {
+  [60, 80, 100, 120, 140, 160, 180, 200, 240]
+}
+
 /// Named the way the chart names it: the key on the page, with the concert
 /// key alongside when those differ.
 fn heading(session: Session, built: Progression) -> String {
@@ -212,7 +227,7 @@ pub fn panel(session: Session) -> Panel {
       let subject = scale.Scale(session.key, session.kind)
       Panel(
         text.scale_view(subject, session.player),
-        abc.render(notation.from_scale(subject, session.player)),
+        abc.render(notation.from_scale(subject, session.player, session.tempo)),
       )
     }
 
@@ -222,7 +237,11 @@ pub fn panel(session: Session) -> Panel {
         Ok(subject) ->
           Panel(
             text.chord_view(subject, session.player),
-            abc.render(notation.from_chord(subject, session.player)),
+            abc.render(notation.from_chord(
+              subject,
+              session.player,
+              session.tempo,
+            )),
           )
       }
 
@@ -232,7 +251,11 @@ pub fn panel(session: Session) -> Panel {
         Ok(built) ->
           Panel(
             text.progression_view(built, session.player),
-            abc.render(notation.from_progression(built, session.player)),
+            abc.render(notation.from_progression(
+              built,
+              session.player,
+              session.tempo,
+            )),
           )
       }
 
@@ -253,6 +276,7 @@ pub fn panel(session: Session) -> Panel {
               heading(session, built),
               built.key,
               session.player,
+              session.tempo,
             )),
           )
         }
@@ -269,7 +293,11 @@ pub fn panel(session: Session) -> Panel {
               session.player,
               built.key,
             ),
-            abc.render(notation.from_progression(built, session.player)),
+            abc.render(notation.from_progression(
+              built,
+              session.player,
+              session.tempo,
+            )),
           )
       }
   }
