@@ -49,6 +49,11 @@ pub type Session {
 pub type Action {
   ChooseInstrument(String)
   ChooseKey(PitchClass)
+  /// The same choices as their typed cousins, for a front end whose controls
+  /// hand back strings.
+  ChooseKeyNamed(String)
+  ChooseScaleNamed(String)
+  ChooseLevelNamed(String)
   /// Move round the cycle of fourths: forwards for one, back for minus one.
   StepKey(Int)
   ChooseScale(ScaleKind)
@@ -90,6 +95,21 @@ pub fn update(session: Session, action: Action) -> Session {
         Error(_) -> session
       }
     ChooseKey(key) -> Session(..session, key: key)
+    ChooseKeyNamed(name) ->
+      case pitch.parse_class(name) {
+        Ok(key) -> Session(..session, key: key)
+        Error(_) -> session
+      }
+    ChooseScaleNamed(name) ->
+      case scale.kind_from_string(name) {
+        Ok(kind) -> Session(..session, kind: kind)
+        Error(_) -> session
+      }
+    ChooseLevelNamed(name) ->
+      case lick.level_from_string(name) {
+        Ok(level) -> Session(..session, level: level)
+        Error(_) -> session
+      }
     StepKey(step) ->
       Session(
         ..session,

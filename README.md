@@ -214,6 +214,26 @@ symbols — and knows nothing about any file format. `jazz/render/abc` only
 spells what it is handed: it decides no accidentals, chooses no key, and groups
 no beams. A MusicXML backend is a second module over the same scores.
 
+## The web interface
+
+```sh
+gleam run -m lustre/dev build jazz_web --no-html --outdir=dist
+cp web/index.html web/styles.css dist/
+python3 -m http.server 8137 --directory dist
+```
+
+Then open <http://127.0.0.1:8137>. Five views over the same theory — scales,
+chords, changes, generated lines, analysis — each showing engraved notation
+above the text the command line prints, for whichever horn is selected. The
+notation is drawn by [abcjs](https://www.abcjs.net/) from the same ABC the CLI
+emits, and the **Play** button plays it back, which is the thing a terminal
+cannot do and the reason the browser was worth the trouble.
+
+The model, the update and every decision about what to show live in
+`jazz/session`, which is pure and tested on both compilation targets. What is
+in `jazz_web` is elements and the bridge to abcjs; there is no music theory in
+the view layer at all.
+
 ## Why it is built this way
 
 **Pitches keep their spelling.** A pitch is a letter name plus an alteration,
@@ -266,6 +286,8 @@ share everything behind.
 | `jazz/notation` | Scores: bars, beams, key signatures, which accidentals print |
 | `jazz/render/text` | Terminal output |
 | `jazz/render/abc` | ABC notation output |
+| `jazz/session` | The state an interactive front end holds, and what to show |
+| `jazz_web` | The Lustre web interface, and the bridge to abcjs |
 | `jazz/cli` | Argument handling |
 
 ## Development
@@ -274,4 +296,8 @@ share everything behind.
 gleam run    # Run the CLI
 gleam test   # Run the tests
 gleam test --target javascript
+
+# The web interface, served from dist/
+gleam run -m lustre/dev build jazz_web --no-html --outdir=dist
+cp web/index.html web/styles.css dist/
 ```

@@ -121,6 +121,22 @@ pub fn the_level_changes_the_vocabulary_test() {
   assert text_of(simple) != text_of(harder)
 }
 
+pub fn controls_can_hand_back_strings_test() {
+  // A form control gives back whatever was in its value attribute, so the
+  // session takes names as well as types, and shrugs at anything it cannot
+  // make sense of.
+  let subject = session.new()
+  assert session.update(subject, session.ChooseKeyNamed("Eb")).key
+    == pitch.class(pitch.E, -1)
+  assert session.update(subject, session.ChooseScaleNamed("altered")).kind
+    == scale.Altered
+  assert session.update(subject, session.ChooseLevelNamed("advanced")).level
+    == lick.Advanced
+  assert session.update(subject, session.ChooseKeyNamed("H")) == subject
+  assert session.update(subject, session.ChooseScaleNamed("wonky")) == subject
+  assert session.update(subject, session.ChooseLevelNamed("expert")) == subject
+}
+
 pub fn views_declare_what_they_need_test() {
   assert session.uses_key(session.ScaleView)
   assert !session.uses_key(session.ChordView)

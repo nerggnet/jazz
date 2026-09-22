@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1" name="viewport" />
+    <title>jazz</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <!-- abcjs draws the notation and plays it back. It has to be loaded
+         before the app, which reaches it through globalThis.ABCJS. -->
+    <script src="https://cdn.jsdelivr.net/npm/abcjs@6.7.1/dist/abcjs-basic-min.js"></script>
+    <script src="./jazz_web.js" type="module"></script>
+  </head>
+  <body>
+    <div id="app"></div>
+  </body>
+</html>
