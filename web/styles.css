@@ -238,6 +238,14 @@ button.primary:hover {
   fill: var(--ink);
 }
 
+/* The playhead is drawn inside the SVG, so it scales with the notation.
+   A presentation attribute loses to a rule, which is why this wins over the
+   fill abcjs puts on the root element. */
+.notation svg .playhead {
+  fill: var(--accent);
+  opacity: 0.8;
+}
+
 .play {
   position: absolute;
   top: 12px;

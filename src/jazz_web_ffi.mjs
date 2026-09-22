@@ -3,29 +3,47 @@
 // markup: abcjs measures glyphs from its own font tables rather than from the
 // page, so nothing needs to be on screen for this to work.
 
+// Both renders have to agree, or the playhead would be placed using
+// coordinates from a differently sized engraving than the one on the page.
+const LAYOUT = {
+  paddingtop: 4,
+  paddingbottom: 20,
+  paddingleft: 0,
+  paddingright: 0,
+  staffwidth: 720,
+};
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+
 let playing = null;
 let timer = null;
+let clock = null;
+let startedAt = 0;
+let frame = null;
+let playhead = null;
+let timings = [];
+let reached = 0;
+let system = null;
 
 function library() {
   return globalThis.ABCJS;
 }
 
-export function renderNotation(abc) {
+function engrave(abc) {
   const abcjs = library();
-  if (!abcjs) return "";
+  if (!abcjs) return null;
   const target = document.createElement("div");
   try {
-    abcjs.renderAbc(target, abc, {
-      paddingtop: 4,
-      paddingbottom: 20,
-      paddingleft: 0,
-      paddingright: 0,
-      staffwidth: 720,
-    });
+    return { target, tunes: abcjs.renderAbc(target, abc, LAYOUT) };
   } catch (error) {
-    return "";
+    return null;
   }
-  return responsive(target);
+}
+
+export function renderNotation(abc) {
+  const drawn = engrave(abc);
+  if (!drawn) return "";
+  return responsive(drawn.target);
 }
 
 // abcjs sizes its SVG with width and height attributes and no viewBox, so
@@ -49,6 +67,80 @@ function responsive(target) {
   return target.innerHTML;
 }
 
+// --- The playhead ------------------------------------------------------------
+//
+// abcjs hands back the elements it drew, but ours were drawn detached and the
+// ones on the page are a copy, so highlighting them would colour nothing. The
+// coordinates are just as good and come from the same engraving: a bar drawn
+// inside the SVG lands exactly where the notes are, and scales with them for
+// free because it lives in the same coordinate space.
+
+function raise(tune) {
+  const svg = document.querySelector(".notation svg");
+  if (!svg) return false;
+
+  tune.setTiming(0);
+  timings = (tune.noteTimings || []).filter(
+    (one) => typeof one.left === "number" && typeof one.top === "number",
+  );
+  if (timings.length === 0) return false;
+
+  playhead = document.createElementNS(SVG_NS, "rect");
+  playhead.setAttribute("class", "playhead");
+  playhead.setAttribute("width", "2.5");
+  playhead.setAttribute("x", String(timings[0].left - 1));
+  playhead.setAttribute("y", String(timings[0].top));
+  playhead.setAttribute("height", String(timings[0].height));
+  svg.appendChild(playhead);
+
+  reached = 0;
+  system = timings[0].top;
+  return true;
+}
+
+function follow() {
+  frame = null;
+  if (!playhead || !clock || !playhead.isConnected) return;
+
+  const elapsed = (clock.currentTime - startedAt) * 1000;
+  while (
+    reached + 1 < timings.length &&
+    timings[reached + 1].milliseconds <= elapsed
+  ) {
+    reached += 1;
+  }
+
+  const now = timings[reached];
+  playhead.setAttribute("x", String(now.left - 1));
+  playhead.setAttribute("y", String(now.top));
+  playhead.setAttribute("height", String(now.height));
+
+  // Only chase the music down the page when it has moved to another system
+  // and gone out of sight; scrolling on every note would be unreadable.
+  if (now.top !== system) {
+    system = now.top;
+    const box = playhead.getBoundingClientRect();
+    if (box.top < 0 || box.bottom > window.innerHeight) {
+      playhead.scrollIntoView({ block: "center", behavior: "smooth" });
+    }
+  }
+
+  frame = requestAnimationFrame(follow);
+}
+
+function lower() {
+  if (frame) {
+    cancelAnimationFrame(frame);
+    frame = null;
+  }
+  if (playhead && playhead.isConnected) playhead.remove();
+  playhead = null;
+  timings = [];
+  clock = null;
+}
+
+// --- Sound -------------------------------------------------------------------
+
 export function play(abc, onEnded) {
   const abcjs = library();
   if (!abcjs || !abcjs.synth.supportsAudio()) {
@@ -57,8 +149,12 @@ export function play(abc, onEnded) {
   }
   stop();
 
-  const target = document.createElement("div");
-  const tunes = abcjs.renderAbc(target, abc);
+  const drawn = engrave(abc);
+  if (!drawn) {
+    onEnded();
+    return undefined;
+  }
+
   const context = new (window.AudioContext || window.webkitAudioContext)();
   const synth = new abcjs.synth.CreateSynth();
   playing = synth;
@@ -66,7 +162,7 @@ export function play(abc, onEnded) {
   synth
     .init({
       audioContext: context,
-      visualObj: tunes[0],
+      visualObj: drawn.tunes[0],
       millisecondsPerMeasure: 1900,
     })
     .then(() => synth.prime())
@@ -74,6 +170,15 @@ export function play(abc, onEnded) {
       // A newer request may have replaced this one while the notes loaded.
       if (playing !== synth) return;
       synth.start();
+
+      // The audio clock rather than a timer of our own, so the playhead
+      // cannot drift away from what is being heard.
+      if (raise(drawn.tunes[0])) {
+        clock = context;
+        startedAt = context.currentTime;
+        frame = requestAnimationFrame(follow);
+      }
+
       const seconds = (response && response.duration) || 0;
       timer = setTimeout(() => {
         if (playing === synth) stop();
@@ -82,6 +187,7 @@ export function play(abc, onEnded) {
     })
     .catch(() => {
       if (playing === synth) playing = null;
+      lower();
       onEnded();
     });
 
@@ -93,6 +199,7 @@ export function stop() {
     clearTimeout(timer);
     timer = null;
   }
+  lower();
   if (playing) {
     try {
       playing.stop();
@@ -102,9 +209,4 @@ export function stop() {
     playing = null;
   }
   return undefined;
-}
-
-export function audioAvailable() {
-  const abcjs = library();
-  return Boolean(abcjs && abcjs.synth && abcjs.synth.supportsAudio());
 }
