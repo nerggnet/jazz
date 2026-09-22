@@ -1,0 +1,194 @@
+import gleam/list
+import gleam/option.{None, Some}
+import gleam/string
+import jazz/chord
+import jazz/instrument
+import jazz/lick
+import jazz/notation
+import jazz/pitch.{type PitchClass, C, D, F, PitchClass}
+import jazz/progression
+import jazz/render/abc
+import jazz/scale
+
+fn concert() -> instrument.Instrument {
+  instrument.concert()
+}
+
+fn scale_score(root: PitchClass, kind: scale.ScaleKind) -> notation.Score {
+  notation.from_scale(scale.Scale(root, kind), concert())
+}
+
+/// Everything after the K: header line, which is the music itself.
+fn tune(text: String) -> String {
+  case string.split(text, "\nK:") {
+    [_, rest] ->
+      case string.split(rest, "\n") {
+        [_, ..lines] -> string.trim(string.join(lines, "\n"))
+        [] -> ""
+      }
+    _ -> ""
+  }
+}
+
+fn accidentals(score: notation.Score) -> List(option.Option(Int)) {
+  notation.events(score)
+  |> list.filter_map(fn(event) {
+    case event {
+      notation.Note(accidental: mark, ..) -> Ok(mark)
+      _ -> Error(Nil)
+    }
+  })
+}
+
+// --- Key signatures ----------------------------------------------------------
+
+pub fn the_signature_is_the_one_with_least_ink_test() {
+  assert scale_score(PitchClass(C, 0), scale.Ionian).signature == 0
+  // D Dorian is spelled with the notes of C major, so it needs no accidentals
+  // of its own. For alto that is written B Dorian, which is A major.
+  assert scale_score(PitchClass(D, 0), scale.Dorian).signature == 0
+  let assert Ok(alto) = instrument.find("alto")
+  assert notation.from_scale(scale.Scale(PitchClass(D, 0), scale.Dorian), alto).signature
+    == 3
+  // Five flats leaves the altered scale needing only one accidental.
+  assert scale_score(PitchClass(C, 0), scale.Altered).signature == -5
+}
+
+pub fn a_chart_with_no_notes_keeps_its_own_key_test() {
+  let assert Ok(built) = progression.build("ii-V-I", PitchClass(F, 0))
+  assert notation.from_progression(built, concert()).signature == -1
+}
+
+// --- Accidentals -------------------------------------------------------------
+
+pub fn the_key_signature_does_the_work_test() {
+  assert list.all(
+    accidentals(scale_score(PitchClass(C, 0), scale.Ionian)),
+    fn(mark) { mark == None },
+  )
+}
+
+pub fn an_accidental_lasts_to_the_end_of_its_bar_test() {
+  // Coming down the blues scale, the F sharp has to be cancelled before the
+  // F natural that follows it in the same bar, and written again in the next.
+  assert tune(abc.render(scale_score(PitchClass(C, 0), scale.Blues)))
+    == "CEF^F GBcB | G^F=FE C2 |]"
+}
+
+pub fn the_same_letter_can_be_bent_both_ways_in_one_bar_test() {
+  assert tune(
+      abc.render(scale_score(PitchClass(C, 0), scale.DiminishedHalfWhole)),
+    )
+    == "C_D^DE ^FGAB | cBAG ^FE^D_D | C2 |]"
+}
+
+// --- Bars and beams ----------------------------------------------------------
+
+pub fn bars_are_filled_by_duration_test() {
+  let score = scale_score(PitchClass(C, 0), scale.Ionian)
+  let lengths =
+    list.map(score.measures, fn(one) {
+      list.fold(one.events, 0, fn(total, event) {
+        total + notation.duration_of(event)
+      })
+    })
+  // Holding the last note turns a seven note scale up and back down into two
+  // complete bars rather than one and three quarters.
+  assert lengths == [8, 8]
+  assert list.all(lengths, fn(length) {
+    length <= notation.measure_capacity(score)
+  })
+}
+
+pub fn eighths_beam_in_half_bars_test() {
+  // A space is what breaks a beam, so the groups show up in the output.
+  assert tune(abc.render(scale_score(PitchClass(C, 0), scale.Ionian)))
+    == "CDEF GABc | BAGF ED C2 |]"
+}
+
+pub fn a_held_note_does_not_beam_test() {
+  let assert Ok(last) =
+    list.last(notation.events(scale_score(PitchClass(C, 0), scale.Ionian)))
+  assert last
+    == notation.Note(pitch.note(C, 0, 4), 2, None, None, None, notation.Alone)
+}
+
+// --- Spelling ----------------------------------------------------------------
+
+pub fn abc_octaves_test() {
+  // The octave containing middle C is written in capitals with no marks.
+  let assert Ok(cmaj7) = chord.parse("Cmaj7")
+  assert tune(abc.render(notation.from_chord(cmaj7, concert())))
+    == "\"Cmaj7\"CEGB GE C2 |]"
+  // The octave above is lower case, and each one after that takes an
+  // apostrophe. Baritone reads more than an octave above where it sounds.
+  let assert Ok(bari) = instrument.find("bari")
+  assert tune(abc.render(notation.from_chord(cmaj7, bari)))
+    == "\"Amaj7\"Aceg ec A2 |]"
+  let assert Ok(alto) = instrument.find("alto")
+  assert tune(
+      abc.render(notation.from_scale(
+        scale.Scale(PitchClass(F, 1), scale.Lydian),
+        alto,
+      )),
+    )
+    == "efga bc'd'e' | d'c'ba gf e2 |]"
+}
+
+pub fn chord_symbols_are_quoted_test() {
+  let assert Ok(built) = progression.build("ii-V-I", PitchClass(C, 0))
+  assert tune(abc.render(notation.from_progression(built, concert())))
+    == "\"Dm7\"x8 | \"G7\"x8 | \"Cmaj7\"x8 | \"Cmaj7\"x8 |]"
+}
+
+pub fn a_chart_has_one_bar_per_bar_test() {
+  let assert Ok(built) = progression.build("blues", PitchClass(F, 0))
+  assert list.length(notation.from_progression(built, concert()).measures) == 12
+}
+
+// --- Instruments -------------------------------------------------------------
+
+pub fn exercises_land_on_the_horn_test() {
+  // Whatever octave the theory was worked out in, what gets printed has to be
+  // playable on the instrument it is printed for.
+  list.each(instrument.all(), fn(player) {
+    list.each([scale.Ionian, scale.Altered, scale.BebopDominant], fn(kind) {
+      list.each(progression.cycle_of_fourths(PitchClass(C, 0)), fn(key) {
+        let score = notation.from_scale(scale.Scale(key, kind), player)
+        list.each(notation.pitches(score), fn(one) {
+          assert instrument.in_range(player, one)
+        })
+      })
+    })
+  })
+}
+
+pub fn the_header_says_what_it_is_test() {
+  let assert Ok(alto) = instrument.find("alto")
+  let text =
+    abc.render(notation.from_scale(
+      scale.Scale(PitchClass(D, 0), scale.Dorian),
+      alto,
+    ))
+  assert string.contains(text, "X:1")
+  assert string.contains(text, "T:B Dorian")
+  assert string.contains(text, "T:Alto sax (Eb)")
+  assert string.contains(text, "M:4/4")
+  assert string.contains(text, "L:1/8")
+  assert string.contains(text, "K:A")
+}
+
+pub fn lines_carry_their_changes_test() {
+  let assert Ok(built) = progression.build("ii-V-I", PitchClass(C, 0))
+  let line = lick.over_progression(built, lick.options(lick.Beginner, 1))
+  let score = notation.from_line(line, "test", PitchClass(C, 0), concert())
+  let symbols =
+    notation.events(score)
+    |> list.filter_map(fn(event) {
+      case event {
+        notation.Note(chord: Some(symbol), ..) -> Ok(symbol)
+        _ -> Error(Nil)
+      }
+    })
+  assert symbols == ["Dm7", "G7", "Cmaj7", "Cmaj7"]
+}

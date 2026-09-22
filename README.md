@@ -10,6 +10,7 @@ B-flat instruments.
 gleam run -- scale D dorian --for alto
 gleam run -- chord Bb7#9 --for tenor
 gleam run -- progression blues --key Bb --for tenor
+gleam run -- lick ii-V-I --key F --for alto --format abc
 ```
 
 ## What it does
@@ -163,6 +164,56 @@ which is why a two-five sounds like one idea. In the example above the tritone
 substitute gives the game away, with `Eb7` holding the same two notes as the
 `A7` it replaced, upside down.
 
+### Printed notation
+
+Any command that produces notes takes `--format abc`:
+
+```
+$ gleam run -- lick ii-V-I --key Bb --for alto --level advanced --seed 3 --format abc
+
+X:1
+T:Major ii-V-I in Bb
+T:Alto sax (Eb)
+M:4/4
+L:1/8
+K:G
+"Am7"cBAF BA^EG | "D7"FEDC B,CC^C | "Gmaj7"DEFG ABE^C | "Gmaj7"DFGB dfgf |]
+```
+
+That is a complete tune: paste it into any ABC renderer, or pipe it to
+`abcm2ps` for a PDF. `abcjs` will both draw it and play it back, which is the
+reason ABC came first — it is the format you can check by reading, and the one
+that will carry a web front end later.
+
+`--all-keys` produces a numbered tune book rather than twelve separate files,
+so a whole cycle prints as one document.
+
+Two things happen on the way out, and both belong to notation rather than to
+either format:
+
+**The key signature is chosen, not asked for.** Whichever one leaves the fewest
+accidentals on the page wins. D Dorian gets no sharps or flats, the altered
+scale gets five flats and needs a single accidental, and a chord chart simply
+keeps its own key.
+
+**Accidentals follow the real rule.** One lasts to the end of its bar at its
+own octave, so the part reads like a part:
+
+```
+$ gleam run -- scale C blues --format abc
+...
+CEF^F GBcB | G^F=FE C2 |]
+```
+
+The F sharp is cancelled before the F natural that follows it in the same bar,
+and written again in the next one. Nothing else is printed, because the two
+flats in the signature have already said the rest.
+
+`jazz/notation` holds the score — bars, durations, beams, key signature, chord
+symbols — and knows nothing about any file format. `jazz/render/abc` only
+spells what it is handed: it decides no accidentals, chooses no key, and groups
+no beams. A MusicXML backend is a second module over the same scores.
+
 ## Why it is built this way
 
 **Pitches keep their spelling.** A pitch is a letter name plus an alteration,
@@ -212,7 +263,9 @@ share everything behind.
 | `jazz/progression` | Progressions built from degrees, roman numerals, key cycles |
 | `jazz/lick` | Line generation: targets, approaches and connective devices |
 | `jazz/analysis` | Finding two-fives, substitutes and guide tone lines in changes |
+| `jazz/notation` | Scores: bars, beams, key signatures, which accidentals print |
 | `jazz/render/text` | Terminal output |
+| `jazz/render/abc` | ABC notation output |
 | `jazz/cli` | Argument handling |
 
 ## Development

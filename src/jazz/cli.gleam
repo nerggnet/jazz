@@ -14,8 +14,10 @@ import gleam/string
 import jazz/chord
 import jazz/instrument.{type Instrument}
 import jazz/lick
+import jazz/notation
 import jazz/pitch.{type PitchClass}
 import jazz/progression
+import jazz/render/abc
 import jazz/render/text
 import jazz/scale
 
@@ -49,6 +51,15 @@ fn report(outcome: Result(String, String)) -> Nil {
 fn scale_command(args: List(String)) -> Result(String, String) {
   use options <- result.try(parse(args))
   use player <- result.try(instrument_option(options))
+  use format <- result.try(format_option(options))
+  let draw = fn(subjects) {
+    case format {
+      Text ->
+        subjects |> list.map(text.scale_view(_, player)) |> string.join("\n\n")
+      Abc ->
+        subjects |> list.map(notation.from_scale(_, player)) |> abc.render_book
+    }
+  }
   case options.positional {
     [root_text, kind_text] -> {
       use root <- result.try(pitch.parse_class(root_text))
@@ -57,12 +68,10 @@ fn scale_command(args: List(String)) -> Result(String, String) {
         Some(_) ->
           Ok(
             keys(root, flag(options, "cycle"))
-            |> list.map(fn(key) {
-              text.scale_view(scale.Scale(key, kind), player)
-            })
-            |> string.join("\n\n"),
+            |> list.map(fn(key) { scale.Scale(key, kind) })
+            |> draw,
           )
-        None -> Ok(text.scale_view(scale.Scale(root, kind), player))
+        None -> Ok(draw([scale.Scale(root, kind)]))
       }
     }
     _ -> Error("usage: jazz scale <root> <scale> [--for <instrument>]")
@@ -72,10 +81,14 @@ fn scale_command(args: List(String)) -> Result(String, String) {
 fn chord_command(args: List(String)) -> Result(String, String) {
   use options <- result.try(parse(args))
   use player <- result.try(instrument_option(options))
+  use format <- result.try(format_option(options))
   case options.positional {
     [symbol] -> {
       use parsed <- result.try(chord.parse(symbol))
-      Ok(text.chord_view(parsed, player))
+      Ok(case format {
+        Text -> text.chord_view(parsed, player)
+        Abc -> abc.render(notation.from_chord(parsed, player))
+      })
     }
     _ -> Error("usage: jazz chord <symbol> [--for <instrument>]")
   }
@@ -84,6 +97,19 @@ fn chord_command(args: List(String)) -> Result(String, String) {
 fn progression_command(args: List(String)) -> Result(String, String) {
   use options <- result.try(parse(args))
   use player <- result.try(instrument_option(options))
+  use format <- result.try(format_option(options))
+  let draw = fn(subjects) {
+    case format {
+      Text ->
+        subjects
+        |> list.map(text.progression_view(_, player))
+        |> string.join("\n\n")
+      Abc ->
+        subjects
+        |> list.map(notation.from_progression(_, player))
+        |> abc.render_book
+    }
+  }
   use key <- result.try(case flag(options, "key") {
     Some(text) -> pitch.parse_class(text)
     None -> Ok(pitch.natural(pitch.C))
@@ -94,14 +120,10 @@ fn progression_command(args: List(String)) -> Result(String, String) {
         Some(_) ->
           keys(key, flag(options, "cycle"))
           |> list.try_map(fn(each) { progression.build(name, each) })
-          |> result.map(fn(built) {
-            built
-            |> list.map(text.progression_view(_, player))
-            |> string.join("\n\n")
-          })
+          |> result.map(draw)
         None ->
           progression.build(name, key)
-          |> result.map(text.progression_view(_, player))
+          |> result.map(fn(built) { draw([built]) })
       }
     _ ->
       Error(
@@ -113,6 +135,7 @@ fn progression_command(args: List(String)) -> Result(String, String) {
 fn lick_command(args: List(String)) -> Result(String, String) {
   use options <- result.try(parse(args))
   use player <- result.try(instrument_option(options))
+  use format <- result.try(format_option(options))
   use level <- result.try(case flag(options, "level") {
     Some(text) -> lick.level_from_string(text)
     None -> Ok(lick.Beginner)
@@ -142,28 +165,43 @@ fn lick_command(args: List(String)) -> Result(String, String) {
     [single] ->
       case progression.build(single, key) {
         Ok(built) ->
-          Ok(text.lick_view(
+          Ok(draw_lick(
             lick.over_progression(built, settings),
             built.name <> " in " <> pitch.class_to_string(built.key),
-            player,
             built.key,
+            player,
+            format,
           ))
         Error(unknown) ->
           case chord.parse(single) {
-            Ok(_) -> custom_lick([single], requested, settings, player)
+            Ok(_) -> custom_lick([single], requested, settings, player, format)
             Error(_) -> Error(unknown)
           }
       }
-    many -> custom_lick(many, requested, settings, player)
+    many -> custom_lick(many, requested, settings, player, format)
   }
 }
 
 /// A line over whatever changes were typed on the command line, a bar each.
+fn draw_lick(
+  line: lick.Line,
+  heading: String,
+  key: PitchClass,
+  player: Instrument,
+  format: Format,
+) -> String {
+  case format {
+    Text -> text.lick_view(line, heading, player, key)
+    Abc -> abc.render(notation.from_line(line, heading, key, player))
+  }
+}
+
 fn custom_lick(
   symbols: List(String),
   requested: Option(PitchClass),
   settings: lick.Options,
   player: Instrument,
+  format: Format,
 ) -> Result(String, String) {
   use chords <- result.try(list.try_map(symbols, chord.parse))
   // Without a key given, assume the changes end where they mean to.
@@ -174,7 +212,7 @@ fn custom_lick(
   }
   let line =
     lick.over_chords(list.map(chords, fn(one) { #(one, lick.bar) }), settings)
-  Ok(text.lick_view(line, string.join(symbols, " "), player, key))
+  Ok(draw_lick(line, string.join(symbols, " "), key, player, format))
 }
 
 fn analysis_command(args: List(String)) -> Result(String, String) {
@@ -297,6 +335,23 @@ fn flag(options: Options, name: String) -> Option(String) {
   }
 }
 
+pub type Format {
+  Text
+  Abc
+}
+
+fn format_option(options: Options) -> Result(Format, String) {
+  case flag(options, "format") {
+    None -> Ok(Text)
+    Some(name) ->
+      case string.lowercase(string.trim(name)) {
+        "text" | "plain" -> Ok(Text)
+        "abc" -> Ok(Abc)
+        _ -> Error("unknown format `" <> name <> "`, try text or abc")
+      }
+  }
+}
+
 fn instrument_option(options: Options) -> Result(Instrument, String) {
   named_instrument(flag(options, "for"))
 }
@@ -336,6 +391,7 @@ OPTIONS
   --all-keys               Repeat through all twelve keys
   --level <level>          beginner (default), intermediate, or advanced
   --seed <n>               Pick a different line; the same seed always repeats
+  --format <format>        text (default) or abc, for printable notation
   --cycle <order>          fourths (default), fifths, or chromatic
 
 EXAMPLES
@@ -346,6 +402,8 @@ EXAMPLES
   jazz progression blues --key Bb --for tenor
   jazz lick ii-V-I --key C --for alto --level intermediate
   jazz lick Dm7 G7 Cmaj7 --for tenor --seed 12
+  jazz scale C bebop-dominant --for tenor --format abc
+  jazz lick blues --key Bb --for tenor --format abc > blues.abc
   jazz analyse blues --key F
   jazz analyse Cmaj7 A7b9 Dm7 Db7 Cmaj7
   jazz transpose C E G --from concert --to alto

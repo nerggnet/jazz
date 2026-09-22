@@ -164,6 +164,22 @@ fn letter_of_fifths(position: Int) -> Letter {
   }
 }
 
+/// The alteration a key signature applies to a letter.
+///
+/// Sharps arrive in the order F C G D A E B and flats in the reverse, which
+/// on the line of fifths is simply a threshold: the letters at one end of it
+/// are the ones that get an accidental.
+pub fn key_alteration(letter: Letter, signature: Int) -> Int {
+  case
+    signature > 0 && letter_fifths(letter) <= signature - 2,
+    signature < 0 && letter_fifths(letter) >= 6 + signature
+  {
+    True, _ -> 1
+    _, True -> -1
+    _, _ -> 0
+  }
+}
+
 // --- Comparison --------------------------------------------------------------
 
 /// Whether two pitch classes sound the same, however they are spelled.
