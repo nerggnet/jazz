@@ -125,7 +125,8 @@ pub fn over_chords(items: List(#(Chord, Int)), settings: Options) -> Line {
     phrase_plan(total, settings.level, generator, 0, [])
   let #(targets, generator) =
     choose_targets(items, settings, generator, None, [])
-  let segments = fill_all(items, targets, windows, settings, generator, 0, [])
+  let segments =
+    fill_all(items, targets, windows, settings, generator, 0, Echo(None, 0), [])
   Line(segments, settings.seed)
 }
 
@@ -260,6 +261,7 @@ fn fill_all(
   settings: Options,
   generator: Random,
   at: Int,
+  carry: Echo,
   acc: List(Segment),
 ) -> List(Segment) {
   case items, targets {
@@ -275,9 +277,19 @@ fn fill_all(
           }
         [] -> None
       }
-      let #(segment, generator) =
-        fill(current, length, played, target, label, next, settings, generator)
-      fill_all(rest, later, windows, settings, generator, at + length, [
+      let #(segment, generator, carry) =
+        fill(
+          current,
+          length,
+          played,
+          target,
+          label,
+          next,
+          settings,
+          carry,
+          generator,
+        )
+      fill_all(rest, later, windows, settings, generator, at + length, carry, [
         segment,
         ..acc
       ])
@@ -294,10 +306,13 @@ fn fill(
   label: String,
   next: Option(Pitch),
   settings: Options,
+  carry: Echo,
   generator: Random,
-) -> #(Segment, Random) {
+) -> #(Segment, Random, Echo) {
   case int.max(0, played.until - played.from) {
-    0 -> #(Segment(current, [Rest(length)], "-", "resting"), generator)
+    // A silent bar hands the figure on untouched, so a phrase can still
+    // answer the one before it across the gap.
+    0 -> #(Segment(current, [Rest(length)], "-", "resting"), generator, carry)
     slots ->
       sound(
         current,
@@ -308,6 +323,7 @@ fn fill(
         label,
         next,
         settings,
+        carry,
         generator,
       )
   }
@@ -322,25 +338,15 @@ fn sound(
   label: String,
   next: Option(Pitch),
   settings: Options,
+  carry: Echo,
   generator: Random,
-) -> #(Segment, Random) {
+) -> #(Segment, Random, Echo) {
   let tones = scale_pitches(current, settings)
   let arpeggio = chord_pitches(current, settings)
 
-  let #(wanted, generator) = case next {
-    None -> #(Direct, generator)
-    Some(_) -> random.pick(generator, approaches(settings.level), Direct)
-  }
-  let #(connector, generator) =
-    random.pick(generator, connectors(settings.level), ScaleRun)
-
-  // The approach has to fit in what is left of the phrase; if it does not,
-  // walk in directly.
-  let #(chosen, body_length) = case slots - 1 - approach_length(wanted) {
-    room if room >= 0 -> #(wanted, room)
-    _ -> #(Direct, slots - 1)
-  }
-
+  // Which way the line is heading, decided before the figure so that a
+  // figure carried over keeps the direction it was thought of in. The same
+  // offsets read backwards would be an inversion, not a sequence.
   let direction = case next {
     Some(upcoming) ->
       case pitch.to_midi(upcoming) >= pitch.to_midi(target) {
@@ -350,9 +356,13 @@ fn sound(
     None -> 1
   }
 
+  let #(figure, generator) =
+    choose_figure(slots, next, direction, settings, carry, generator)
+
+  let approach = build_approach(arrival(figure.shape, next), next, tones)
   let body =
-    build_body(connector, tones, arpeggio, target, body_length, direction)
-  let approach = build_approach(chosen, next, tones)
+    replay(figure.shape, figure.body, tones, arpeggio, target)
+    |> mend(approach, rungs_of(figure.shape, tones, arpeggio), direction)
 
   let notes =
     [target, ..body]
@@ -367,13 +377,17 @@ fn sound(
       chord: current,
       events: events,
       target: label,
-      device: describe(connector, chosen)
+      device: describe(figure)
         <> case after > 0 {
         True -> ", then a breath"
         False -> ""
       },
     ),
     generator,
+    Echo(Some(figure.shape), case figure.repeated {
+      True -> carry.run + 1
+      False -> 0
+    }),
   )
 }
 
@@ -483,69 +497,247 @@ fn build_approach(
   }
 }
 
-fn build_body(
-  connector: Connector,
+/// A figure with the notes taken out of it: how far each step sits from the
+/// one it started on, and how it arrived at whatever came next.
+///
+/// This is what makes a sequence possible. Offsets are counted in steps of a
+/// ladder rather than in semitones, so replaying them from a new target over
+/// a new chord gives the same shape spelled in the new harmony, which is what
+/// a player does when they answer a bar with itself a step lower.
+type Shape {
+  Shape(connector: Connector, offsets: List(Int), approach: Approach)
+}
+
+/// What one segment hands to the next: the figure it played, and how many
+/// times that figure has been running.
+type Echo {
+  Echo(shape: Option(Shape), run: Int)
+}
+
+/// A figure decided on, sized to the room available.
+type Figure {
+  Figure(shape: Shape, body: Int, repeated: Bool)
+}
+
+/// How often a level answers a figure with itself.
+fn repeat_chance(level: Level) -> Int {
+  case level {
+    Beginner -> 40
+    Intermediate -> 50
+    Advanced -> 55
+  }
+}
+
+/// Carry the last figure over, or think of a new one.
+///
+/// A figure is allowed to come back twice and no more. Stating an idea,
+/// sequencing it, and then going somewhere else is the shape of the thing;
+/// a fourth time is a stuck record.
+fn choose_figure(
+  slots: Int,
+  next: Option(Pitch),
+  direction: Int,
+  settings: Options,
+  carry: Echo,
+  generator: Random,
+) -> #(Figure, Random) {
+  case carried(slots, next, carry) {
+    Error(_) -> invent(slots, next, direction, settings, generator)
+    Ok(#(shape, room)) -> {
+      let #(again, generator) =
+        random.chance(generator, repeat_chance(settings.level))
+      case again {
+        True -> #(Figure(shape, room, True), generator)
+        False -> invent(slots, next, direction, settings, generator)
+      }
+    }
+  }
+}
+
+/// The last figure, if there is one and it still fits.
+fn carried(
+  slots: Int,
+  next: Option(Pitch),
+  carry: Echo,
+) -> Result(#(Shape, Int), Nil) {
+  case carry.shape, carry.run < 2 {
+    Some(shape), True -> {
+      let room = slots - 1 - approach_length(arrival(shape, next))
+      // A shorter room cuts the figure off, which still reads as the same
+      // idea. A longer one would have to invent the end of it, so it does
+      // not count as the same figure at all.
+      case room > 0 && room <= list.length(shape.offsets) {
+        True -> Ok(#(shape, room))
+        False -> Error(Nil)
+      }
+    }
+    _, _ -> Error(Nil)
+  }
+}
+
+/// A figure has no approach when there is nothing after it to approach.
+fn arrival(shape: Shape, next: Option(Pitch)) -> Approach {
+  case next {
+    Some(_) -> shape.approach
+    None -> Direct
+  }
+}
+
+fn invent(
+  slots: Int,
+  next: Option(Pitch),
+  direction: Int,
+  settings: Options,
+  generator: Random,
+) -> #(Figure, Random) {
+  let #(wanted, generator) = case next {
+    None -> #(Direct, generator)
+    Some(_) -> random.pick(generator, approaches(settings.level), Direct)
+  }
+  let #(connector, generator) =
+    random.pick(generator, connectors(settings.level), ScaleRun)
+
+  // The approach has to fit in what is left of the phrase; if it does not,
+  // walk in directly.
+  let #(chosen, body) = case slots - 1 - approach_length(wanted) {
+    room if room >= 0 -> #(wanted, room)
+    _ -> #(Direct, slots - 1)
+  }
+
+  let offsets =
+    steps(connector, body) |> list.map(fn(step) { direction * step })
+
+  #(Figure(Shape(connector, offsets, chosen), body, False), generator)
+}
+
+/// The shape of a figure, before it knows what notes it will be made of.
+fn steps(connector: Connector, count: Int) -> List(Int) {
+  case connector {
+    ScaleRun | Arpeggio ->
+      num.counting(count) |> list.map(fn(step) { step + 1 })
+    ChordTonesDown ->
+      num.counting(count) |> list.map(fn(step) { -1 * { step + 1 } })
+    // The one-two-three-five pattern every player runs through the cycle,
+    // each group starting a step higher than the last.
+    DigitalPattern ->
+      num.counting(count)
+      |> list.map(fn(step) {
+        let position = step + 1
+        let offset = case position % 4 {
+          0 -> 0
+          1 -> 1
+          2 -> 2
+          _ -> 4
+        }
+        position / 4 + offset
+      })
+  }
+}
+
+/// Turn a shape back into notes, from a given starting note, turning round at
+/// the edges of the range rather than repeating the top note.
+fn replay(
+  shape: Shape,
+  body: Int,
   tones: List(Pitch),
   arpeggio: List(Pitch),
   from: Pitch,
-  count: Int,
-  direction: Int,
 ) -> List(Pitch) {
-  case connector {
-    ScaleRun -> walk(tones, from, count, direction)
-    Arpeggio -> walk(arpeggio, from, count, direction)
-    ChordTonesDown -> walk(arpeggio, from, count, -1)
-    DigitalPattern -> digital(tones, from, count, direction)
+  let rungs = rungs_of(shape, tones, arpeggio)
+  let start = index_of(rungs, from)
+  shape.offsets
+  |> list.take(body)
+  |> list.map(fn(offset) { at(rungs, along(rungs, start, offset)) })
+}
+
+fn rungs_of(
+  shape: Shape,
+  tones: List(Pitch),
+  arpeggio: List(Pitch),
+) -> List(Pitch) {
+  case shape.connector {
+    ScaleRun | DigitalPattern -> tones
+    Arpeggio | ChordTonesDown -> arpeggio
   }
 }
 
-/// Step through a list of pitches, turning round at the edges of the range
-/// rather than repeating the top note.
-fn walk(
-  tones: List(Pitch),
-  from: Pitch,
-  count: Int,
-  direction: Int,
-) -> List(Pitch) {
-  let start = index_of(tones, from)
-  let size = list.length(tones)
-  num.counting(count)
-  |> list.map(fn(step) {
-    at(tones, reflect(start + direction * { step + 1 }, size))
-  })
+fn along(rungs: List(Pitch), from: Int, offset: Int) -> Int {
+  let octave = list.length(list.unique(list.map(rungs, fn(one) { one.class })))
+  wrap(from + offset, list.length(rungs), octave, 0)
 }
 
-/// The one-two-three-five pattern every player runs through the cycle, each
-/// group starting a step higher than the last.
-fn digital(
-  tones: List(Pitch),
-  from: Pitch,
-  count: Int,
+/// A body note landing on the note the approach was about to play sounds it
+/// twice, which reads as a stutter rather than as anything. Moving the last
+/// one a rung further keeps the count and loses the repeat.
+fn mend(
+  body: List(Pitch),
+  approach: List(Pitch),
+  rungs: List(Pitch),
   direction: Int,
 ) -> List(Pitch) {
-  let start = index_of(tones, from)
-  let size = list.length(tones)
-  num.counting(count)
-  |> list.map(fn(step) {
-    let position = step + 1
-    let offset = case position % 4 {
-      0 -> 0
-      1 -> 1
-      2 -> 2
-      _ -> 4
-    }
-    at(tones, reflect(start + direction * { position / 4 + offset }, size))
-  })
-}
-
-fn describe(connector: Connector, approach: Approach) -> String {
-  let filling = case connector {
-    ScaleRun -> "scale run"
-    Arpeggio -> "arpeggio"
-    DigitalPattern -> "1235 pattern"
-    ChordTonesDown -> "chord tones down"
+  case list.last(body), list.first(approach) {
+    Ok(tail), Ok(head) ->
+      case pitch.to_midi(tail) == pitch.to_midi(head) {
+        False -> body
+        True -> {
+          let before = case list.reverse(body) {
+            [_, earlier, ..] -> pitch.to_midi(earlier)
+            _ -> -1
+          }
+          let at_index = index_of(rungs, tail)
+          // On in the direction of travel first, and back the other way if
+          // that only moves the stutter somewhere else.
+          let candidates =
+            [direction, -direction]
+            |> list.map(fn(step) { at(rungs, along(rungs, at_index, step)) })
+            |> list.filter(fn(one) {
+              pitch.to_midi(one) != pitch.to_midi(head)
+              && pitch.to_midi(one) != before
+            })
+          case candidates {
+            [moved, ..] -> swap_last(body, moved)
+            [] -> body
+          }
+        }
+      }
+    _, _ -> body
   }
-  let arrival = case approach {
+}
+
+fn swap_last(body: List(Pitch), with: Pitch) -> List(Pitch) {
+  list.append(list.take(body, list.length(body) - 1), [with])
+}
+
+/// Fold a figure that runs off the end of the range back by whole octaves.
+///
+/// Bouncing off the edge instead would bend the shape, and the shape is the
+/// point: a sequence that turns round halfway through is not a sequence. An
+/// octave down keeps every pitch class and the contour with it, which is what
+/// a player does when they run out of horn.
+fn wrap(index: Int, size: Int, octave: Int, tries: Int) -> Int {
+  case octave <= 0 || tries > 8 {
+    True -> int.max(0, int.min(index, size - 1))
+    False ->
+      case index < 0, index >= size {
+        True, _ -> wrap(index + octave, size, octave, tries + 1)
+        _, True -> wrap(index - octave, size, octave, tries + 1)
+        _, _ -> index
+      }
+  }
+}
+
+fn describe(figure: Figure) -> String {
+  let filling = case figure.repeated {
+    True -> "the same shape again"
+    False ->
+      case figure.shape.connector {
+        ScaleRun -> "scale run"
+        Arpeggio -> "arpeggio"
+        DigitalPattern -> "1235 pattern"
+        ChordTonesDown -> "chord tones down"
+      }
+  }
+  let landing = case figure.shape.approach {
     Direct -> ""
     ChromaticBelow -> ", chromatic from below"
     ChromaticAbove -> ", chromatic from above"
@@ -554,7 +746,7 @@ fn describe(connector: Connector, approach: Approach) -> String {
     EnclosureAboveBelow -> ", enclosure above then below"
     EnclosureBelowAbove -> ", enclosure below then above"
   }
-  filling <> arrival
+  filling <> landing
 }
 
 // --- Pitch sets --------------------------------------------------------------

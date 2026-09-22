@@ -118,6 +118,15 @@ stops before its end, and the gap is real silence: an approach note never runs
 across it, because whatever comes out of a rest is a target rather than the
 tail of the figure before it.
 
+Figures come back. A shape is kept as how far each step sits from the one it
+started on, counted in steps of the scale or the arpeggio rather than in
+semitones, so replaying it from a new target over a new chord gives the same
+shape spelled in the new harmony — which is what a player does when they answer
+a bar with itself a step lower. The readout says `the same shape again` when it
+happens. A figure is allowed to come back twice and no more: stating an idea,
+sequencing it, and then going somewhere else is the shape of the thing, and a
+fourth time is a stuck record.
+
 `--level` decides how much vocabulary is in play and how much room it leaves:
 beginners get plain arpeggios and scale runs into their targets, and come in on
 the beat with half a bar of silence at the end of every phrase; advanced lines

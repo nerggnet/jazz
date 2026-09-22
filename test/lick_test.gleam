@@ -1,3 +1,4 @@
+import gleam/int
 import gleam/list
 import gleam/string
 import jazz/chord
@@ -166,6 +167,138 @@ pub fn advanced_lines_use_the_whole_vocabulary_test() {
   assert string.contains(everything, "enclosure")
   assert string.contains(everything, "1235")
   assert string.contains(everything, "chord tones down")
+}
+
+fn chorus(level: lick.Level, seed: Int) -> lick.Line {
+  let assert Ok(changes) =
+    progression.parse("|: Dm7 | G7 | Em7 | A7 | Dm7 | G7 | Cmaj7 | Cmaj7 :|")
+  lick.over_progression(changes, lick.options(level, seed))
+}
+
+fn tones(segment: lick.Segment) -> List(pitch.Pitch) {
+  list.filter_map(segment.events, fn(event) {
+    case event {
+      lick.Tone(note, _) -> Ok(note)
+      lick.Rest(_) -> Error(Nil)
+    }
+  })
+}
+
+/// The steps of a figure, in semitones and with their direction.
+fn deltas(notes: List(pitch.Pitch)) -> List(Int) {
+  case notes {
+    [first, second, ..rest] -> [
+      pitch.to_midi(second) - pitch.to_midi(first),
+      ..deltas([second, ..rest])
+    ]
+    _ -> []
+  }
+}
+
+fn heading(step: Int) -> Int {
+  case step > 0, step < 0 {
+    True, _ -> 1
+    _, True -> -1
+    _, _ -> 0
+  }
+}
+
+fn repeated(segment: lick.Segment) -> Bool {
+  string.contains(segment.device, "the same shape again")
+}
+
+fn pairs(items: List(a)) -> List(#(a, a)) {
+  case items {
+    [first, second, ..rest] -> [#(first, second), ..pairs([second, ..rest])]
+    _ -> []
+  }
+}
+
+pub fn figures_come_back_test() {
+  // A chorus that never repeats itself is a random walk through correct
+  // notes. Something has to come back.
+  let sequences =
+    [lick.Beginner, lick.Intermediate, lick.Advanced]
+    |> list.flat_map(fn(level) {
+      [1, 2, 3, 4, 5] |> list.map(fn(seed) { chorus(level, seed) })
+    })
+    |> list.flat_map(fn(one) { one.segments })
+    |> list.count(repeated)
+  assert sequences > 10
+}
+
+pub fn a_sequence_keeps_the_shape_test() {
+  // Repeating a figure means the same contour aimed at a new target over a
+  // new chord, not the same notes: that is what makes it a sequence.
+  let checked =
+    [lick.Beginner, lick.Intermediate, lick.Advanced]
+    |> list.flat_map(fn(level) {
+      [1, 2, 3, 4, 5, 6, 7, 8] |> list.map(fn(seed) { chorus(level, seed) })
+    })
+    |> list.flat_map(fn(one) { pairs(one.segments) })
+    |> list.filter(fn(pair) {
+      let #(before, after) = pair
+      // Enough notes either side that the comparison is of the figure and
+      // not of whatever approach note happened to follow it.
+      repeated(after)
+      && list.length(tones(before)) >= 6
+      && list.length(tones(after)) >= 6
+    })
+  list.each(checked, fn(pair) {
+    let #(before, after) = pair
+    list.zip(deltas(tones(after)), deltas(tones(before)))
+    |> list.take(4)
+    |> list.each(fn(steps) {
+      let #(here, there) = steps
+      // An octave jump is a figure being folded back into the range rather
+      // than part of the shape, so those positions are not compared.
+      assert int.absolute_value(here) >= 7
+        || int.absolute_value(there) >= 7
+        || heading(here) == heading(there)
+    })
+  })
+  assert list.length(checked) > 5
+}
+
+pub fn a_figure_is_not_run_into_the_ground_test() {
+  // State it, sequence it, then go somewhere else. A fourth time in a row is
+  // a stuck record.
+  list.each([lick.Beginner, lick.Intermediate, lick.Advanced], fn(level) {
+    list.each([1, 2, 3, 4, 5, 6, 7, 8], fn(seed) {
+      let #(longest, _) =
+        list.fold(chorus(level, seed).segments, #(0, 0), fn(state, segment) {
+          let #(worst, run) = state
+          let run = case repeated(segment) {
+            True -> run + 1
+            False -> 0
+          }
+          #(int.max(worst, run), run)
+        })
+      assert longest <= 2
+    })
+  })
+}
+
+pub fn the_line_does_not_stutter_test() {
+  // Two of the same note in a row reads as a mistake rather than as anything.
+  // It cannot be ruled out entirely, but it has to stay rare.
+  let #(stutters, total) =
+    [lick.Beginner, lick.Intermediate, lick.Advanced]
+    |> list.flat_map(fn(level) {
+      [1, 2, 3, 4, 5, 6, 7, 8] |> list.map(fn(seed) { chorus(level, seed) })
+    })
+    |> list.fold(#(0, 0), fn(state, one) {
+      let #(bad, seen) = state
+      let notes = lick.pitches(one)
+      let repeats =
+        pairs(notes)
+        |> list.count(fn(pair) {
+          pitch.to_midi(pair.0) == pitch.to_midi(pair.1)
+        })
+      #(bad + repeats, seen + list.length(notes))
+    })
+  assert total > 1000
+  assert stutters * 100 < total
 }
 
 pub fn transposing_a_line_is_reversible_test() {
