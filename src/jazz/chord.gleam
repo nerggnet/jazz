@@ -54,6 +54,57 @@ pub fn new(root: PitchClass, triad: Triad) -> Chord {
   Chord(root, triad, NoSeventh, False, [], [], None)
 }
 
+// --- The chords everything else is built out of ------------------------------
+
+pub fn major_seventh(root: PitchClass) -> Chord {
+  Chord(root, MajorTriad, MajorSeventh, False, [], [], None)
+}
+
+pub fn sixth(root: PitchClass) -> Chord {
+  Chord(root, MajorTriad, NoSeventh, True, [], [], None)
+}
+
+pub fn dominant(root: PitchClass) -> Chord {
+  Chord(root, MajorTriad, MinorSeventh, False, [], [], None)
+}
+
+pub fn dominant_flat_nine(root: PitchClass) -> Chord {
+  Chord(root, MajorTriad, MinorSeventh, False, [Tension(9, -1)], [], None)
+}
+
+/// Every extension bent at once, and no natural fifth to argue with them.
+pub fn altered(root: PitchClass) -> Chord {
+  Chord(
+    root,
+    MajorTriad,
+    MinorSeventh,
+    False,
+    [Tension(9, -1), Tension(9, 1), Tension(11, 1), Tension(13, -1)],
+    [5],
+    None,
+  )
+}
+
+pub fn minor_seventh(root: PitchClass) -> Chord {
+  Chord(root, MinorTriad, MinorSeventh, False, [], [], None)
+}
+
+pub fn minor_sixth(root: PitchClass) -> Chord {
+  Chord(root, MinorTriad, NoSeventh, True, [], [], None)
+}
+
+pub fn half_diminished(root: PitchClass) -> Chord {
+  Chord(root, DiminishedTriad, MinorSeventh, False, [], [], None)
+}
+
+pub fn diminished_seventh(root: PitchClass) -> Chord {
+  Chord(root, DiminishedTriad, DiminishedSeventh, False, [], [], None)
+}
+
+pub fn suspended(root: PitchClass) -> Chord {
+  Chord(root, Sus4, MinorSeventh, False, [], [], None)
+}
+
 // --- Notes -------------------------------------------------------------------
 
 /// The intervals of the chord above its root, lowest first.

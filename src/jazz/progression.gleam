@@ -10,10 +10,7 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleam/string
-import jazz/chord.{
-  type Chord, Chord, DiminishedSeventh, DiminishedTriad, MajorSeventh,
-  MajorTriad, MinorSeventh, MinorTriad, NoSeventh, Tension,
-}
+import jazz/chord.{type Chord, DiminishedTriad, MinorTriad}
 import jazz/internal/num
 import jazz/interval
 import jazz/pitch.{type PitchClass, Pitch}
@@ -37,51 +34,6 @@ pub type Progression {
 
 fn root(key: PitchClass, number: Int, alteration: Int) -> PitchClass {
   interval.transpose_class(key, interval.degree(number, alteration))
-}
-
-fn maj7(note: PitchClass) -> Chord {
-  Chord(note, MajorTriad, MajorSeventh, False, [], [], None)
-}
-
-fn six(note: PitchClass) -> Chord {
-  Chord(note, MajorTriad, NoSeventh, True, [], [], None)
-}
-
-fn dom7(note: PitchClass) -> Chord {
-  Chord(note, MajorTriad, MinorSeventh, False, [], [], None)
-}
-
-fn m7(note: PitchClass) -> Chord {
-  Chord(note, MinorTriad, MinorSeventh, False, [], [], None)
-}
-
-fn m7b5(note: PitchClass) -> Chord {
-  Chord(note, DiminishedTriad, MinorSeventh, False, [], [], None)
-}
-
-fn dim7(note: PitchClass) -> Chord {
-  Chord(note, DiminishedTriad, DiminishedSeventh, False, [], [], None)
-}
-
-fn alt7(note: PitchClass) -> Chord {
-  Chord(
-    note,
-    MajorTriad,
-    MinorSeventh,
-    False,
-    [
-      Tension(9, -1),
-      Tension(9, 1),
-      Tension(11, 1),
-      Tension(13, -1),
-    ],
-    [5],
-    None,
-  )
-}
-
-fn dom7b9(note: PitchClass) -> Chord {
-  Chord(note, MajorTriad, MinorSeventh, False, [Tension(9, -1)], [], None)
 }
 
 // --- The catalogue -----------------------------------------------------------
@@ -125,10 +77,10 @@ pub fn two_five_one(key: PitchClass) -> Progression {
     note: "Aim for the third of each chord and let the sevenths fall a step.",
     key: key,
     bars: [
-      Bar([m7(root(key, 2, 0))]),
-      Bar([dom7(root(key, 5, 0))]),
-      Bar([maj7(key)]),
-      Bar([maj7(key)]),
+      Bar([chord.minor_seventh(root(key, 2, 0))]),
+      Bar([chord.dominant(root(key, 5, 0))]),
+      Bar([chord.major_seventh(key)]),
+      Bar([chord.major_seventh(key)]),
     ],
   )
 }
@@ -140,10 +92,10 @@ pub fn minor_two_five_one(key: PitchClass) -> Progression {
     note: "The altered dominant is melodic minor a semitone above its root.",
     key: key,
     bars: [
-      Bar([m7b5(root(key, 2, 0))]),
-      Bar([alt7(root(key, 5, 0))]),
-      Bar([m7(key)]),
-      Bar([m7(key)]),
+      Bar([chord.half_diminished(root(key, 2, 0))]),
+      Bar([chord.altered(root(key, 5, 0))]),
+      Bar([chord.minor_seventh(key)]),
+      Bar([chord.minor_seventh(key)]),
     ],
   )
 }
@@ -155,10 +107,10 @@ pub fn turnaround(key: PitchClass) -> Progression {
     note: "The last two bars of almost every standard.",
     key: key,
     bars: [
-      Bar([maj7(key)]),
-      Bar([dom7b9(root(key, 6, 0))]),
-      Bar([m7(root(key, 2, 0))]),
-      Bar([dom7(root(key, 5, 0))]),
+      Bar([chord.major_seventh(key)]),
+      Bar([chord.dominant_flat_nine(root(key, 6, 0))]),
+      Bar([chord.minor_seventh(root(key, 2, 0))]),
+      Bar([chord.dominant(root(key, 5, 0))]),
     ],
   )
 }
@@ -170,18 +122,24 @@ pub fn blues(key: PitchClass) -> Progression {
     note: "Bars eight to ten are a two-five; the rest is the blues scale.",
     key: key,
     bars: [
-      Bar([dom7(key)]),
-      Bar([dom7(root(key, 4, 0))]),
-      Bar([dom7(key)]),
-      Bar([m7(root(key, 5, 0)), dom7(key)]),
-      Bar([dom7(root(key, 4, 0))]),
-      Bar([dim7(root(key, 4, 1))]),
-      Bar([dom7(key)]),
-      Bar([m7(root(key, 3, 0)), dom7(root(key, 6, 0))]),
-      Bar([m7(root(key, 2, 0))]),
-      Bar([dom7(root(key, 5, 0))]),
-      Bar([dom7(key), dom7(root(key, 6, 0))]),
-      Bar([m7(root(key, 2, 0)), dom7(root(key, 5, 0))]),
+      Bar([chord.dominant(key)]),
+      Bar([chord.dominant(root(key, 4, 0))]),
+      Bar([chord.dominant(key)]),
+      Bar([chord.minor_seventh(root(key, 5, 0)), chord.dominant(key)]),
+      Bar([chord.dominant(root(key, 4, 0))]),
+      Bar([chord.diminished_seventh(root(key, 4, 1))]),
+      Bar([chord.dominant(key)]),
+      Bar([
+        chord.minor_seventh(root(key, 3, 0)),
+        chord.dominant(root(key, 6, 0)),
+      ]),
+      Bar([chord.minor_seventh(root(key, 2, 0))]),
+      Bar([chord.dominant(root(key, 5, 0))]),
+      Bar([chord.dominant(key), chord.dominant(root(key, 6, 0))]),
+      Bar([
+        chord.minor_seventh(root(key, 2, 0)),
+        chord.dominant(root(key, 5, 0)),
+      ]),
     ],
   )
 }
@@ -193,14 +151,29 @@ pub fn rhythm_changes_a(key: PitchClass) -> Progression {
     note: "Two chords a bar. Guide tones matter more than scales here.",
     key: key,
     bars: [
-      Bar([six(key), dom7b9(root(key, 6, 0))]),
-      Bar([m7(root(key, 2, 0)), dom7(root(key, 5, 0))]),
-      Bar([m7(root(key, 3, 0)), dom7b9(root(key, 6, 0))]),
-      Bar([m7(root(key, 2, 0)), dom7(root(key, 5, 0))]),
-      Bar([dom7(key)]),
-      Bar([dom7(root(key, 4, 0)), dim7(root(key, 4, 1))]),
-      Bar([six(key), dom7b9(root(key, 6, 0))]),
-      Bar([m7(root(key, 2, 0)), dom7(root(key, 5, 0))]),
+      Bar([chord.sixth(key), chord.dominant_flat_nine(root(key, 6, 0))]),
+      Bar([
+        chord.minor_seventh(root(key, 2, 0)),
+        chord.dominant(root(key, 5, 0)),
+      ]),
+      Bar([
+        chord.minor_seventh(root(key, 3, 0)),
+        chord.dominant_flat_nine(root(key, 6, 0)),
+      ]),
+      Bar([
+        chord.minor_seventh(root(key, 2, 0)),
+        chord.dominant(root(key, 5, 0)),
+      ]),
+      Bar([chord.dominant(key)]),
+      Bar([
+        chord.dominant(root(key, 4, 0)),
+        chord.diminished_seventh(root(key, 4, 1)),
+      ]),
+      Bar([chord.sixth(key), chord.dominant_flat_nine(root(key, 6, 0))]),
+      Bar([
+        chord.minor_seventh(root(key, 2, 0)),
+        chord.dominant(root(key, 5, 0)),
+      ]),
     ],
   )
 }
@@ -217,10 +190,13 @@ pub fn coltrane(key: PitchClass) -> Progression {
       let second = root(key, 6, -1)
       let third = root(second, 6, -1)
       [
-        Bar([maj7(key), dom7(root(second, 5, 0))]),
-        Bar([maj7(second), dom7(root(third, 5, 0))]),
-        Bar([maj7(third)]),
-        Bar([m7(root(second, 2, 0)), dom7(root(second, 5, 0))]),
+        Bar([chord.major_seventh(key), chord.dominant(root(second, 5, 0))]),
+        Bar([chord.major_seventh(second), chord.dominant(root(third, 5, 0))]),
+        Bar([chord.major_seventh(third)]),
+        Bar([
+          chord.minor_seventh(root(second, 2, 0)),
+          chord.dominant(root(second, 5, 0)),
+        ]),
       ]
     },
   )
@@ -233,10 +209,10 @@ pub fn backdoor(key: PitchClass) -> Progression {
     note: "bVII7 resolves to I through its own flat seventh. Use Lydian dominant.",
     key: key,
     bars: [
-      Bar([maj7(root(key, 4, 0))]),
-      Bar([m7(root(key, 4, 0))]),
-      Bar([dom7(root(key, 7, -1))]),
-      Bar([maj7(key)]),
+      Bar([chord.major_seventh(root(key, 4, 0))]),
+      Bar([chord.minor_seventh(root(key, 4, 0))]),
+      Bar([chord.dominant(root(key, 7, -1))]),
+      Bar([chord.major_seventh(key)]),
     ],
   )
 }
@@ -248,10 +224,16 @@ pub fn tritone_sub(key: PitchClass) -> Progression {
     note: "bII7 shares its third and seventh with V7, so one line covers both halves.",
     key: key,
     bars: [
-      Bar([m7(root(key, 2, 0)), dom7(root(key, 5, 0))]),
-      Bar([maj7(key)]),
-      Bar([m7(root(key, 2, 0)), dom7(root(key, 2, -1))]),
-      Bar([maj7(key)]),
+      Bar([
+        chord.minor_seventh(root(key, 2, 0)),
+        chord.dominant(root(key, 5, 0)),
+      ]),
+      Bar([chord.major_seventh(key)]),
+      Bar([
+        chord.minor_seventh(root(key, 2, 0)),
+        chord.dominant(root(key, 2, -1)),
+      ]),
+      Bar([chord.major_seventh(key)]),
     ],
   )
 }

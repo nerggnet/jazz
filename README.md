@@ -152,6 +152,38 @@ fifth. `--seed` makes any line reproducible,
 on either compilation target. Lines are generated inside the middle two octaves
 of whichever horn is chosen, so what comes out is playable.
 
+### Making up changes
+
+```sh
+gleam run -- progression tune --bars 32 --key F --level advanced --seed 3
+gleam run -- lick tune --bars 16 --for alto --level intermediate
+gleam run -- analyse tune --bars 16
+```
+
+Random chords would be useless. What makes a set of changes sound like jazz is
+that it is built out of a small number of cells that hand on to each other, and
+`jazz/analysis` already knows what those cells are, because it spends its life
+finding them. The generator is that same grammar run backwards: two-fives,
+turnarounds, substitutions and modulations, chained so the end of one is the
+start of the next, and always coming home to the key it started in.
+
+Which means the analyser can be pointed straight back at the result:
+
+```
+$ gleam run -- analyse tune --bars 16 --key C --level intermediate --seed 3
+
+  1-3     Dm7 G7 Cmaj7          ii-V-I in C
+  8-10    Gm7 C7 Fmaj7          ii-V-I in F
+  10-11   Fmaj7 F#dim7          rising F#dim7
+  13-15   Em7b5 A7alt Dm7       minor ii-V-i in D
+  15-17   Dm7 G7 Cmaj7          ii-V-I in C
+```
+
+Thirty two bars come out as AABA, because a form needs something to come back
+to for the same reason a line needs a figure that returns. `--level` decides
+how far the changes travel: a beginner tune stays in one key, an advanced one
+modulates and substitutes.
+
 ### Typing out changes
 
 Both `lick` and `analyse` take changes written the way they are on a chart,
@@ -344,6 +376,7 @@ share everything behind.
 | `jazz/scale` | Scale formulas, names, and what each one is for |
 | `jazz/chord` | Chord symbols in and out, chord-scale suggestions |
 | `jazz/progression` | Progressions built from degrees, and changes read off a chart |
+| `jazz/tune` | Making up changes, from the cells the analyser knows how to find |
 | `jazz/lick` | Line generation: targets, approaches and connective devices |
 | `jazz/analysis` | Finding two-fives, substitutes and guide tone lines in changes |
 | `jazz/notation` | Scores: bars, beams, key signatures, which accidentals print |

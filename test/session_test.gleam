@@ -137,6 +137,61 @@ pub fn controls_can_hand_back_strings_test() {
   assert session.update(subject, session.ChooseLevelNamed("expert")) == subject
 }
 
+fn making_up(view: session.View) -> session.Session {
+  showing(view)
+  |> session.update(session.ChooseProgression(session.generated))
+}
+
+pub fn changes_can_be_made_up_test() {
+  let subject = making_up(session.ProgressionView)
+  let assert Ok(built) = session.changes(subject)
+  assert list.length(built.bars) == 16
+  // And a line can be played over whatever came out.
+  let assert session.Panel(_, abc) =
+    session.panel(session.update(subject, session.ChooseView(session.LineView)))
+  assert string.contains(abc, "K:")
+}
+
+pub fn a_made_up_tune_can_be_any_length_test() {
+  let subject =
+    session.update(
+      making_up(session.ProgressionView),
+      session.ChooseBarsNamed("32"),
+    )
+  let assert Ok(built) = session.changes(subject)
+  assert list.length(built.bars) == 32
+  // Nonsense leaves it alone rather than producing a tune of no bars.
+  assert session.update(subject, session.ChooseBarsNamed("nope")) == subject
+  assert session.update(subject, session.ChooseBarsNamed("0")) == subject
+}
+
+pub fn the_tune_and_the_line_reroll_separately_test() {
+  // Keeping a tune you like while trying another line over it, and the other
+  // way round, is the whole reason they have seeds of their own.
+  let subject = making_up(session.LineView)
+  let another_line = session.update(subject, session.NewLine)
+  let another_tune = session.update(subject, session.NewTune)
+
+  let assert Ok(before) = session.changes(subject)
+  let assert Ok(after_line) = session.changes(another_line)
+  let assert Ok(after_tune) = session.changes(another_tune)
+
+  assert before.bars == after_line.bars
+  assert before.bars != after_tune.bars
+  assert text_of(subject) != text_of(another_line)
+}
+
+pub fn a_made_up_tune_follows_the_key_test() {
+  let subject =
+    session.update(
+      making_up(session.ProgressionView),
+      session.ChooseKeyNamed("Eb"),
+    )
+  let assert Ok(built) = session.changes(subject)
+  assert pitch.class_to_string(built.key) == "Eb"
+  assert session.uses_key(subject)
+}
+
 pub fn views_declare_what_they_need_test() {
   assert session.uses_key(showing(session.ScaleView))
   assert !session.uses_key(showing(session.ChordView))

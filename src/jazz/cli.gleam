@@ -20,6 +20,7 @@ import jazz/progression.{type Progression}
 import jazz/render/abc
 import jazz/render/text
 import jazz/scale
+import jazz/tune
 
 pub fn run() -> Nil {
   case argv.load().arguments {
@@ -124,7 +125,7 @@ fn progression_command(args: List(String)) -> Result(String, String) {
       |> list.try_map(fn(each) { progression.build(name, each) })
       |> result.map(draw)
     positional, _ -> {
-      use built <- result.try(changes(positional, requested))
+      use built <- result.try(changes(positional, requested, options))
       Ok(draw([built]))
     }
   }
@@ -134,18 +135,8 @@ fn lick_command(args: List(String)) -> Result(String, String) {
   use options <- result.try(parse(args))
   use player <- result.try(instrument_option(options))
   use format <- result.try(format_option(options))
-  use level <- result.try(case flag(options, "level") {
-    Some(text) -> lick.level_from_string(text)
-    None -> Ok(lick.Beginner)
-  })
-  use seed <- result.try(case flag(options, "seed") {
-    Some(text) ->
-      int.parse(text)
-      |> result.replace_error(
-        "`--seed` wants a whole number, not `" <> text <> "`",
-      )
-    None -> Ok(1)
-  })
+  use level <- result.try(level_option(options))
+  use seed <- result.try(number(options, "seed", 1))
   use requested <- result.try(key_option(options))
 
   case options.positional {
@@ -154,7 +145,7 @@ fn lick_command(args: List(String)) -> Result(String, String) {
         "usage: jazz lick <progression|changes> [--key <key>] [--level <level>] [--seed <n>]",
       )
     positional -> {
-      use built <- result.try(changes(positional, requested))
+      use built <- result.try(changes(positional, requested, options))
       let #(low, high) = instrument.comfortable_range(player)
       let line =
         lick.over_progression(built, lick.Options(level, seed, low, high))
@@ -187,7 +178,7 @@ fn analysis_command(args: List(String)) -> Result(String, String) {
         "usage: jazz analyse <progression|changes> [--key <key>] [--for <instrument>]",
       )
     positional -> {
-      use built <- result.try(changes(positional, requested))
+      use built <- result.try(changes(positional, requested, options))
       Ok(text.analysis_view(
         progression.chords(built),
         heading(built),
@@ -206,9 +197,16 @@ fn analysis_command(args: List(String)) -> Result(String, String) {
 fn changes(
   positional: List(String),
   requested: Option(PitchClass),
+  options: Options,
 ) -> Result(Progression, String) {
   let key = option.unwrap(requested, pitch.natural(pitch.C))
   case positional {
+    ["tune"] -> {
+      use bars <- result.try(number(options, "bars", 16))
+      use seed <- result.try(number(options, "seed", 1))
+      use level <- result.try(level_option(options))
+      Ok(tune.generate(bars, key, level, seed))
+    }
     [single] ->
       case progression.build(single, key) {
         Ok(built) -> Ok(built)
@@ -235,6 +233,28 @@ fn in_key(built: Progression, requested: Option(PitchClass)) -> Progression {
 
 fn heading(built: Progression) -> String {
   built.name <> " in " <> pitch.class_to_string(built.key)
+}
+
+fn level_option(options: Options) -> Result(lick.Level, String) {
+  case flag(options, "level") {
+    Some(text) -> lick.level_from_string(text)
+    None -> Ok(lick.Beginner)
+  }
+}
+
+fn number(
+  options: Options,
+  name: String,
+  fallback: Int,
+) -> Result(Int, String) {
+  case flag(options, name) {
+    None -> Ok(fallback)
+    Some(text) ->
+      int.parse(text)
+      |> result.replace_error(
+        "`--" <> name <> "` wants a whole number, not `" <> text <> "`",
+      )
+  }
 }
 
 fn key_option(options: Options) -> Result(Option(PitchClass), String) {
@@ -361,9 +381,9 @@ fn help() -> String {
 USAGE
   jazz scale <root> <scale> [options]
   jazz chord <symbol> [options]
-  jazz progression <name|changes> [options]
-  jazz lick <progression|changes> [options]
-  jazz analyse <progression|changes> [options]
+  jazz progression <name|changes|tune> [options]
+  jazz lick <progression|changes|tune> [options]
+  jazz analyse <progression|changes|tune> [options]
   jazz transpose <notes...> --from <instrument> --to <instrument>
   jazz list scales|instruments|progressions
 
@@ -374,6 +394,7 @@ OPTIONS
   --level <level>          beginner (default), intermediate, or advanced
   --seed <n>               Pick a different line; the same seed always repeats
   --format <format>        text (default) or abc, for printable notation
+  --bars <n>               How long a generated tune should be (default: 16)
   --cycle <order>          fourths (default), fifths, or chromatic
 
 EXAMPLES
@@ -387,6 +408,8 @@ EXAMPLES
   jazz lick \"|: Dm7 | G7 | Cmaj7 | Cmaj7 :|\" --for alto
   jazz scale C bebop-dominant --for tenor --format abc
   jazz lick blues --key Bb --for tenor --format abc > blues.abc
+  jazz progression tune --bars 32 --key F --level advanced --seed 3
+  jazz lick tune --bars 16 --for alto --level intermediate
   jazz analyse blues --key F
   jazz analyse Cmaj7 A7b9 Dm7 Db7 Cmaj7
   jazz transpose C E G --from concert --to alto

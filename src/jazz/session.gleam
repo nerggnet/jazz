@@ -9,6 +9,7 @@
 //// from flags; a session is the same state held still and poked at. Both sit
 //// on the same theory underneath.
 
+import gleam/int
 import jazz/chord
 import jazz/instrument.{type Instrument}
 import jazz/internal/random
@@ -20,6 +21,7 @@ import jazz/progression.{type Progression}
 import jazz/render/abc
 import jazz/render/text
 import jazz/scale.{type ScaleKind}
+import jazz/tune
 
 pub type View {
   ScaleView
@@ -39,7 +41,12 @@ pub type Session {
     changes_text: String,
     progression_id: String,
     level: Level,
+    /// How long a generated tune should be.
+    bars: Int,
     seed: Int,
+    /// Kept apart from the line's seed so a tune can be kept while the line
+    /// over it is rerolled, and the other way round.
+    tune_seed: Int,
     view: View,
   )
 }
@@ -60,7 +67,9 @@ pub type Action {
   ChooseProgression(String)
   ChooseLevel(Level)
   ChooseView(View)
+  ChooseBarsNamed(String)
   NewLine
+  NewTune
 }
 
 /// What the session is showing, ready to be put on screen.
@@ -78,7 +87,9 @@ pub fn new() -> Session {
     changes_text: "Dm7 G7 Cmaj7",
     progression_id: "ii-V-I",
     level: lick.Beginner,
+    bars: 16,
     seed: 1,
+    tune_seed: 1,
     view: ScaleView,
   )
 }
@@ -127,6 +138,15 @@ pub fn update(session: Session, action: Action) -> Session {
       let #(next, _) = random.step(random.new(session.seed))
       Session(..session, seed: next)
     }
+    NewTune -> {
+      let #(next, _) = random.step(random.new(session.tune_seed))
+      Session(..session, tune_seed: next)
+    }
+    ChooseBarsNamed(name) ->
+      case int.parse(name) {
+        Ok(bars) if bars > 0 -> Session(..session, bars: bars)
+        _ -> session
+      }
   }
 }
 
@@ -135,9 +155,16 @@ pub fn update(session: Session, action: Action) -> Session {
 /// The changes the session is pointed at: one from the catalogue, or whatever
 /// has been typed in.
 pub fn changes(session: Session) -> Result(Progression, String) {
-  case typing_changes(session) {
-    True -> progression.parse(session.changes_text)
-    False -> progression.build(session.progression_id, session.key)
+  case typing_changes(session), generating_tune(session) {
+    True, _ -> progression.parse(session.changes_text)
+    _, True ->
+      Ok(tune.generate(
+        session.bars,
+        session.key,
+        session.level,
+        session.tune_seed,
+      ))
+    _, _ -> progression.build(session.progression_id, session.key)
   }
 }
 
@@ -146,11 +173,37 @@ pub fn typing_changes(session: Session) -> Bool {
   session.progression_id == typed
 }
 
+/// Whether the changes are being made up on the spot.
+pub fn generating_tune(session: Session) -> Bool {
+  session.progression_id == generated
+}
+
 /// The name of the entry that means "the ones I typed".
 pub const typed = "typed"
 
-fn heading(built: Progression) -> String {
-  built.name <> " in " <> pitch.class_to_string(built.key)
+/// And the one that means "make some up".
+pub const generated = "generated"
+
+/// Lengths worth offering. Thirty two comes out as AABA.
+pub fn bar_choices() -> List(Int) {
+  [8, 12, 16, 24, 32]
+}
+
+/// Named the way the chart names it: the key on the page, with the concert
+/// key alongside when those differ.
+fn heading(session: Session, built: Progression) -> String {
+  let written =
+    interval.transpose_class(
+      built.key,
+      instrument.write_interval_for_key(session.player, built.key),
+    )
+  built.name
+  <> " in "
+  <> pitch.class_to_string(written)
+  <> case instrument.is_concert(session.player) {
+    True -> ""
+    False -> "  (concert " <> pitch.class_to_string(built.key) <> ")"
+  }
 }
 
 pub fn panel(session: Session) -> Panel {
@@ -189,10 +242,15 @@ pub fn panel(session: Session) -> Panel {
         Ok(built) -> {
           let line = lick.over_progression(built, options(session))
           Panel(
-            text.lick_view(line, heading(built), session.player, built.key),
+            text.lick_view(
+              line,
+              heading(session, built),
+              session.player,
+              built.key,
+            ),
             abc.render(notation.from_line(
               line,
-              heading(built),
+              heading(session, built),
               built.key,
               session.player,
             )),
@@ -207,7 +265,7 @@ pub fn panel(session: Session) -> Panel {
           Panel(
             text.analysis_view(
               progression.chords(built),
-              heading(built),
+              heading(session, built),
               session.player,
               built.key,
             ),

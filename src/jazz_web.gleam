@@ -5,6 +5,7 @@
 //// can be tested without a browser. What is here is elements, and the bridge
 //// to abcjs that turns a tune into notation and into sound.
 
+import gleam/int
 import gleam/list
 import jazz/instrument
 import jazz/lick
@@ -120,7 +121,11 @@ fn controls(model: Model) -> Element(Msg) {
     session.ScaleView -> [keys(model), scales(model)]
     session.ChordView -> [chord_box(model)]
     session.ProgressionView -> source(model, [])
-    session.LineView -> source(model, [levels(model), again()])
+    session.LineView ->
+      case session.generating_tune(model.session) {
+        True -> source(model, [again()])
+        False -> source(model, [levels(model), again()])
+      }
     session.AnalysisView -> source(model, [])
   }
   html.div([attribute.class("controls")], list.append(shared, particular))
@@ -192,11 +197,49 @@ fn scales(model: Model) -> Element(Msg) {
 /// Where the changes come from. Typed ones carry their own key, so the key
 /// picker steps aside for the box.
 fn source(model: Model, rest: List(Element(Msg))) -> List(Element(Msg)) {
-  let picked = case session.typing_changes(model.session) {
-    True -> [changes(model), changes_box(model)]
-    False -> [keys(model), changes(model)]
+  let picked = case
+    session.typing_changes(model.session),
+    session.generating_tune(model.session)
+  {
+    True, _ -> [changes(model), changes_box(model)]
+    _, True -> [
+      keys(model),
+      changes(model),
+      bars(model),
+      levels(model),
+      fresh_tune(),
+    ]
+    _, _ -> [keys(model), changes(model)]
   }
   list.append(picked, rest)
+}
+
+fn bars(model: Model) -> Element(Msg) {
+  field(
+    "Bars",
+    html.select(
+      [event.on_change(fn(name) { Did(session.ChooseBarsNamed(name)) })],
+      list.map(session.bar_choices(), fn(one) {
+        html.option(
+          [
+            attribute.value(int.to_string(one)),
+            attribute.selected(one == model.session.bars),
+          ],
+          int.to_string(one),
+        )
+      }),
+    ),
+  )
+}
+
+fn fresh_tune() -> Element(Msg) {
+  field(
+    "\u{00A0}",
+    html.button(
+      [attribute.class("primary"), event.on_click(Did(session.NewTune))],
+      [html.text("New tune")],
+    ),
+  )
 }
 
 fn changes(model: Model) -> Element(Msg) {
@@ -205,6 +248,13 @@ fn changes(model: Model) -> Element(Msg) {
     html.select(
       [event.on_change(fn(id) { Did(session.ChooseProgression(id)) })],
       [
+        html.option(
+          [
+            attribute.value(session.generated),
+            attribute.selected(session.generating_tune(model.session)),
+          ],
+          "made up",
+        ),
         html.option(
           [
             attribute.value(session.typed),
