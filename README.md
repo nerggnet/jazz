@@ -123,6 +123,46 @@ gleam run -- lick Dm7 G7 Cmaj7 --for tenor --seed 12
 gleam run -- lick "Cm7b5" "F7alt" "Bbm6" --for alto --level advanced
 ```
 
+### Reading changes back
+
+```
+$ gleam run -- analyse Cmaj7 A7b9 Dm7 Db7 Cmaj7 --for tenor
+
+  Cmaj7 A7b9 Dm7 Db7 Cmaj7  --  Tenor sax (Bb)
+
+  Chords  What is going on
+
+  3-5     Em7 Eb7 Dmaj7
+          ii bII7 I in D
+          Eb7 is standing in for the dominant a tritone away. Same third
+          and seventh, swapped over, so the bass walks down by semitones.
+
+  Guide tones. The seventh of one chord is the third of the next.
+
+  Chord  Dmaj7  B7b9  Em7  Eb7  Dmaj7
+  3rd    F#     D#    G    G    F#
+  7th    C#     A     D    Db   C#
+
+  Concert: Cmaj7 A7b9 Dm7 Db7 Cmaj7
+```
+
+`analyse` looks for the cells a player already knows how to handle: major and
+minor two-fives, turnarounds, tritone substitutes, the backdoor cadence,
+borrowed minor fourths, passing diminished chords, and Coltrane's major third
+cycle. Recognising them is most of what separates reading a tune from playing
+one, because a two-five is one idea to prepare rather than two unrelated chords
+to react to. A cell sitting inside a longer one is left out, so a turnaround is
+reported as a turnaround and not also as the two-five inside it.
+
+Matching is by sound, not by spelling, because the next chart will write `C#7`
+where the last one wrote `Db7`.
+
+The guide tone table underneath is the harmony in two voices. Read across the
+`7th` row and then the `3rd` row of the next chord: they are a semitone apart,
+which is why a two-five sounds like one idea. In the example above the tritone
+substitute gives the game away, with `Eb7` holding the same two notes as the
+`A7` it replaced, upside down.
+
 ## Why it is built this way
 
 **Pitches keep their spelling.** A pitch is a letter name plus an alteration,
@@ -171,6 +211,7 @@ share everything behind.
 | `jazz/chord` | Chord symbols in and out, chord-scale suggestions |
 | `jazz/progression` | Progressions built from degrees, roman numerals, key cycles |
 | `jazz/lick` | Line generation: targets, approaches and connective devices |
+| `jazz/analysis` | Finding two-fives, substitutes and guide tone lines in changes |
 | `jazz/render/text` | Terminal output |
 | `jazz/cli` | Argument handling |
 

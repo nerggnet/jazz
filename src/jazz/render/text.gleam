@@ -7,7 +7,9 @@
 
 import gleam/int
 import gleam/list
+import gleam/option
 import gleam/string
+import jazz/analysis.{type Finding}
 import jazz/chord.{type Chord}
 import jazz/instrument.{type Instrument}
 import jazz/interval.{type Interval}
@@ -198,6 +200,118 @@ fn bar_line(bars: List(#(String, String)), width: Int) -> String {
   <> indent
   <> "  "
   <> string.trim_end(numerals)
+}
+
+// --- Analysis ----------------------------------------------------------------
+
+pub fn analysis_view(
+  chords: List(Chord),
+  heading: String,
+  player: Instrument,
+  key: PitchClass,
+) -> String {
+  let shift = instrument.write_interval_for_key(player, key)
+  let written = list.map(chords, chord.transpose(_, shift))
+  let findings = analysis.analyse(written)
+
+  let cells = case findings {
+    [] -> [
+      indent
+      <> "Nothing recognised here, which is not the same as nothing happening.",
+    ]
+    _ ->
+      list.flat_map(findings, fn(one) {
+        let where = string.pad_end(span_label(one), 8, " ")
+        [
+          indent <> where <> chords_of(written, one),
+          indent <> string.repeat(" ", 8) <> one.label,
+          ..wrap(one.detail, 64, indent <> string.repeat(" ", 8))
+        ]
+      })
+  }
+
+  // Eight chords to a block, so a long tune still fits a terminal.
+  let guides =
+    analysis.guide_tone_line(written)
+    |> chunk(8)
+    |> list.map(fn(steps) {
+      table([
+        #("Chord", list.map(steps, fn(step) { chord.to_string(step.chord) })),
+        #("3rd", list.map(steps, fn(step) { class_or_dash(step.third) })),
+        #("7th", list.map(steps, fn(step) { class_or_dash(step.seventh) })),
+      ])
+    })
+    |> string.join("\n\n")
+
+  let concert = case instrument.is_concert(player) {
+    True -> []
+    False -> [
+      "",
+      indent
+        <> "Concert: "
+        <> string.join(list.map(chords, chord.to_string), " "),
+    ]
+  }
+
+  string.join(
+    list.flatten([
+      [title(heading, player), "", indent <> "Chords  What is going on", ""],
+      cells,
+      [
+        "",
+        indent
+          <> "Guide tones. The seventh of one chord is the third of the next.",
+        "",
+      ],
+      [guides],
+      concert,
+    ]),
+    "\n",
+  )
+}
+
+fn span_label(one: Finding) -> String {
+  case one.length {
+    1 -> int.to_string(one.start + 1)
+    _ ->
+      int.to_string(one.start + 1)
+      <> "-"
+      <> int.to_string(one.start + one.length)
+  }
+}
+
+fn chords_of(chords: List(Chord), one: Finding) -> String {
+  chords
+  |> list.drop(one.start)
+  |> list.take(one.length)
+  |> list.map(chord.to_string)
+  |> string.join(" ")
+}
+
+fn class_or_dash(note: option.Option(PitchClass)) -> String {
+  case note {
+    option.Some(found) -> pitch.class_to_string(found)
+    option.None -> "-"
+  }
+}
+
+/// Break a sentence across lines without splitting words.
+fn wrap(sentence: String, width: Int, prefix: String) -> List(String) {
+  string.split(sentence, " ")
+  |> list.fold([], fn(lines, word) {
+    case lines {
+      [] -> [word]
+      [current, ..rest] -> {
+        let joined = current <> " " <> word
+        case string.length(joined) < width {
+          True -> [joined, ..rest]
+          False -> [word, ..lines]
+        }
+      }
+    }
+  })
+  |> list.reverse
+  |> list.map(fn(one) { prefix <> one })
 }
 
 // --- Licks -------------------------------------------------------------------

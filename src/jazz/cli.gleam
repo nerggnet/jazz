@@ -28,6 +28,8 @@ pub fn run() -> Nil {
     ["progression", ..rest] | ["prog", ..rest] ->
       report(progression_command(rest))
     ["lick", ..rest] | ["line", ..rest] -> report(lick_command(rest))
+    ["analyse", ..rest] | ["analyze", ..rest] | ["changes", ..rest] ->
+      report(analysis_command(rest))
     ["transpose", ..rest] -> report(transpose_command(rest))
     ["list", ..rest] -> report(list_command(rest))
     [unknown, ..] ->
@@ -175,6 +177,53 @@ fn custom_lick(
   Ok(text.lick_view(line, string.join(symbols, " "), player, key))
 }
 
+fn analysis_command(args: List(String)) -> Result(String, String) {
+  use options <- result.try(parse(args))
+  use player <- result.try(instrument_option(options))
+  use requested <- result.try(case flag(options, "key") {
+    Some(text) -> result.map(pitch.parse_class(text), Some)
+    None -> Ok(None)
+  })
+  let key = option.unwrap(requested, pitch.natural(pitch.C))
+
+  case options.positional {
+    [] ->
+      Error(
+        "usage: jazz analyse <progression|chords...> [--key <key>] [--for <instrument>]",
+      )
+    [single] ->
+      case progression.build(single, key) {
+        Ok(built) ->
+          Ok(text.analysis_view(
+            progression.chords(built),
+            built.name <> " in " <> pitch.class_to_string(built.key),
+            player,
+            built.key,
+          ))
+        Error(unknown) ->
+          case chord.parse(single) {
+            Ok(_) -> custom_analysis([single], requested, player)
+            Error(_) -> Error(unknown)
+          }
+      }
+    many -> custom_analysis(many, requested, player)
+  }
+}
+
+fn custom_analysis(
+  symbols: List(String),
+  requested: Option(PitchClass),
+  player: Instrument,
+) -> Result(String, String) {
+  use chords <- result.try(list.try_map(symbols, chord.parse))
+  let key = case requested, list.last(chords) {
+    Some(given), _ -> given
+    None, Ok(final) -> final.root
+    None, Error(_) -> pitch.natural(pitch.C)
+  }
+  Ok(text.analysis_view(chords, string.join(symbols, " "), player, key))
+}
+
 fn transpose_command(args: List(String)) -> Result(String, String) {
   use options <- result.try(parse(args))
   use from <- result.try(named_instrument(flag(options, "from")))
@@ -277,6 +326,7 @@ USAGE
   jazz chord <symbol> [options]
   jazz progression <name> [options]
   jazz lick <progression|chords...> [options]
+  jazz analyse <progression|chords...> [options]
   jazz transpose <notes...> --from <instrument> --to <instrument>
   jazz list scales|instruments|progressions
 
@@ -296,6 +346,8 @@ EXAMPLES
   jazz progression blues --key Bb --for tenor
   jazz lick ii-V-I --key C --for alto --level intermediate
   jazz lick Dm7 G7 Cmaj7 --for tenor --seed 12
+  jazz analyse blues --key F
+  jazz analyse Cmaj7 A7b9 Dm7 Db7 Cmaj7
   jazz transpose C E G --from concert --to alto
 
 NOTES
