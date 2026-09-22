@@ -72,6 +72,13 @@ pub type Score {
 }
 
 /// How many units fit in one bar.
+/// The tempo everything is written at, in quarter notes a minute.
+///
+/// This belongs in the music rather than in whatever is playing it. A score
+/// with no tempo leaves every reader to invent one, and two readers inventing
+/// different ones is how a playhead ends up running ahead of the sound.
+pub const tempo = 126
+
 pub fn measure_capacity(score: Score) -> Int {
   score.time.0 * score.unit / score.time.1
 }
@@ -193,7 +200,7 @@ pub fn from_progression(subject: Progression, player: Instrument) -> Score {
     time: #(4, 4),
     unit: 8,
     signature: signature_near(moved.key),
-    tempo: None,
+    tempo: Some(tempo),
     measures: measures,
   )
 }
@@ -284,7 +291,7 @@ fn build(
     time: #(4, 4),
     unit: 8,
     signature: signature,
-    tempo: None,
+    tempo: Some(tempo),
     measures: apply_accidentals(measures, signature),
   )
 }

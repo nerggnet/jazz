@@ -219,6 +219,29 @@ pub fn exercises_land_on_the_horn_test() {
   })
 }
 
+pub fn a_score_says_how_fast_it_goes_test() {
+  // Without a tempo in the music, anything reading the score invents one,
+  // and two readers inventing different ones is how a playhead ends up
+  // running ahead of the sound it is supposed to be following.
+  let assert Ok(cmaj7) = chord.parse("Cmaj7")
+  let assert Ok(built) = progression.build("ii-V-I", PitchClass(C, 0))
+  let scores = [
+    scale_score(PitchClass(C, 0), scale.Ionian),
+    notation.from_chord(cmaj7, concert()),
+    notation.from_progression(built, concert()),
+    notation.from_line(
+      lick.over_progression(built, lick.options(lick.Beginner, 1)),
+      "test",
+      PitchClass(C, 0),
+      concert(),
+    ),
+  ]
+  list.each(scores, fn(score) {
+    assert score.tempo == Some(notation.tempo)
+    assert string.contains(abc.render(score), "Q:1/4=")
+  })
+}
+
 pub fn the_header_says_what_it_is_test() {
   let assert Ok(alto) = instrument.find("alto")
   let text =

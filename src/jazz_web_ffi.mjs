@@ -168,11 +168,10 @@ export function play(abc, onEnded) {
   playing = synth;
 
   synth
-    .init({
-      audioContext: context,
-      visualObj: drawn.tunes[0],
-      millisecondsPerMeasure: 1900,
-    })
+    // No tempo override: the score carries one, and the playhead reads its
+    // timings from the same place. Telling the synth something different is
+    // how the two came apart.
+    .init({ audioContext: context, visualObj: drawn.tunes[0] })
     .then(() => synth.prime())
     .then((response) => {
       // A newer request may have replaced this one while the notes loaded.
