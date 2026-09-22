@@ -243,7 +243,7 @@ button.primary:hover {
    fill abcjs puts on the root element. */
 .notation svg .playhead {
   fill: var(--accent);
-  opacity: 0.8;
+  opacity: 0.4;
 }
 
 .play {

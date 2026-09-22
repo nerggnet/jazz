@@ -87,15 +87,25 @@ function raise(tune) {
 
   playhead = document.createElementNS(SVG_NS, "rect");
   playhead.setAttribute("class", "playhead");
-  playhead.setAttribute("width", "2.5");
-  playhead.setAttribute("x", String(timings[0].left - 1));
-  playhead.setAttribute("y", String(timings[0].top));
-  playhead.setAttribute("height", String(timings[0].height));
-  svg.appendChild(playhead);
+  playhead.setAttribute("rx", "3");
+  place(timings[0]);
+  // First child, so it sits behind the notes it is lighting up rather than
+  // over the top of them.
+  svg.insertBefore(playhead, svg.firstChild);
 
   reached = 0;
   system = timings[0].top;
   return true;
+}
+
+// A hairline is easy to miss against staff lines. Lighting up the width of
+// the note being played reads at a glance, which is the whole point of it.
+function place(one) {
+  const wide = Math.max(one.width || 0, 11) + 7;
+  playhead.setAttribute("x", String(one.left - 4));
+  playhead.setAttribute("y", String(one.top));
+  playhead.setAttribute("width", String(wide));
+  playhead.setAttribute("height", String(one.height));
 }
 
 function follow() {
@@ -111,9 +121,7 @@ function follow() {
   }
 
   const now = timings[reached];
-  playhead.setAttribute("x", String(now.left - 1));
-  playhead.setAttribute("y", String(now.top));
-  playhead.setAttribute("height", String(now.height));
+  place(now);
 
   // Only chase the music down the page when it has moved to another system
   // and gone out of sight; scrolling on every note would be unreadable.
