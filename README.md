@@ -216,6 +216,10 @@ no beams. A MusicXML backend is a second module over the same scores.
 
 ## The web interface
 
+Live at <https://nerggnet.github.io/jazz/>, rebuilt from `master` on every push.
+
+To run it locally:
+
 ```sh
 gleam run -m lustre/dev build jazz_web --no-html --outdir=dist
 cp web/index.html web/styles.css dist/
