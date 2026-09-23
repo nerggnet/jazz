@@ -9,6 +9,7 @@ import gleam/int
 import gleam/list
 import jazz/instrument
 import jazz/lick
+import jazz/pattern
 import jazz/pitch
 import jazz/progression
 import jazz/scale
@@ -123,7 +124,12 @@ fn tabs(model: Model) -> Element(Msg) {
 fn controls(model: Model) -> Element(Msg) {
   let shared = [instruments(model), tempos(model)]
   let particular = case model.session.view {
-    session.ScaleView -> [keys(model), scales(model)]
+    session.ScaleView -> [
+      keys(model),
+      scales(model),
+      patterns(model),
+      all_keys(model),
+    ]
     session.ChordView -> [chord_box(model)]
     session.ProgressionView -> source(model, [])
     session.LineView ->
@@ -213,6 +219,53 @@ fn scales(model: Model) -> Element(Msg) {
           scale.name(one),
         )
       }),
+    ),
+  )
+}
+
+fn patterns(model: Model) -> Element(Msg) {
+  field(
+    "Pattern",
+    html.select(
+      [event.on_change(fn(name) { Did(session.ChoosePatternNamed(name)) })],
+      list.map(pattern.all(), fn(one) {
+        html.option(
+          [
+            attribute.value(pattern.id(one)),
+            attribute.selected(one == model.session.shape),
+          ],
+          pattern.name(one),
+        )
+      }),
+    ),
+  )
+}
+
+/// The same exercise round the cycle of fourths, which is how it is actually
+/// practised once the shape is under the fingers.
+fn all_keys(model: Model) -> Element(Msg) {
+  field(
+    "Keys",
+    html.select(
+      [
+        event.on_change(fn(name) { Did(session.RoundTheKeys(name == "all")) }),
+      ],
+      [
+        html.option(
+          [
+            attribute.value("one"),
+            attribute.selected(!model.session.round_the_keys),
+          ],
+          "This one",
+        ),
+        html.option(
+          [
+            attribute.value("all"),
+            attribute.selected(model.session.round_the_keys),
+          ],
+          "All twelve",
+        ),
+      ],
     ),
   )
 }

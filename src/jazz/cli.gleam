@@ -15,6 +15,7 @@ import jazz/chord
 import jazz/instrument.{type Instrument}
 import jazz/lick
 import jazz/notation
+import jazz/pattern.{type Pattern}
 import jazz/pitch.{type PitchClass}
 import jazz/progression.{type Progression}
 import jazz/render/abc
@@ -54,13 +55,20 @@ fn scale_command(args: List(String)) -> Result(String, String) {
   use player <- result.try(instrument_option(options))
   use format <- result.try(format_option(options))
   use beats <- result.try(tempo_option(options))
+  use shape <- result.try(pattern_option(options))
   let draw = fn(subjects) {
     case format {
       Text ->
-        subjects |> list.map(text.scale_view(_, player)) |> string.join("\n\n")
+        subjects
+        |> list.map(fn(one: scale.Scale) {
+          text.scale_view(one, shape, [one.root], player)
+        })
+        |> string.join("\n\n")
       Abc ->
         subjects
-        |> list.map(notation.from_scale(_, player, beats))
+        |> list.map(fn(one: scale.Scale) {
+          notation.from_pattern(one, shape, [one.root], player, beats)
+        })
         |> abc.render_book
     }
   }
@@ -78,7 +86,10 @@ fn scale_command(args: List(String)) -> Result(String, String) {
         None -> Ok(draw([scale.Scale(root, kind)]))
       }
     }
-    _ -> Error("usage: jazz scale <root> <scale> [--for <instrument>]")
+    _ ->
+      Error(
+        "usage: jazz scale <root> <scale> [--for <instrument>] [--pattern <pattern>]",
+      )
   }
 }
 
@@ -368,6 +379,13 @@ fn tempo_option(options: Options) -> Result(Int, String) {
   }
 }
 
+fn pattern_option(options: Options) -> Result(Pattern, String) {
+  case flag(options, "pattern") {
+    None -> Ok(pattern.Straight)
+    Some(name) -> pattern.from_string(string.lowercase(string.trim(name)))
+  }
+}
+
 fn format_option(options: Options) -> Result(Format, String) {
   case flag(options, "format") {
     None -> Ok(Text)
@@ -417,6 +435,8 @@ OPTIONS
   --for, -f <instrument>   Write the part for this instrument (default: concert)
   --key, -k <key>          Concert key for a progression (default: C)
   --all-keys               Repeat through all twelve keys
+  --pattern <pattern>      straight (default), thirds, fourths, triads,
+                           sevenths, or digital
   --level <level>          beginner (default), intermediate, or advanced
   --seed <n>               Pick a different line; the same seed always repeats
   --format <format>        text (default) or abc, for printable notation
@@ -428,6 +448,7 @@ OPTIONS
 EXAMPLES
   jazz scale D dorian --for alto
   jazz scale C bebop-dominant --for tenor --all-keys
+  jazz scale F dorian --for alto --pattern thirds
   jazz chord Bb7#9 --for tenor
   jazz progression ii-V-I --key F --for alto
   jazz progression blues --key Bb --for tenor

@@ -17,15 +17,17 @@ import gleam/dict
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/string
 import jazz/chord.{type Chord}
 import jazz/comp
 import jazz/instrument.{type Instrument}
 import jazz/internal/num
 import jazz/interval.{type Interval}
 import jazz/lick.{type Line}
+import jazz/pattern.{type Pattern}
 import jazz/pitch.{type Pitch, type PitchClass, Pitch}
 import jazz/progression.{type Progression}
-import jazz/scale.{type Scale}
+import jazz/scale.{type Scale, type ScaleKind}
 
 /// How a note joins the ones beside it under a beam.
 pub type Beam {
@@ -63,7 +65,13 @@ pub type Event {
 }
 
 pub type Measure {
-  Measure(events: List(Event))
+  Measure(
+    events: List(Event),
+    /// A key signature starting here, as a position on the line of fifths.
+    /// Only the bar that changes key carries one; everything after it reads
+    /// in that key until something says otherwise.
+    key: Option(Int),
+  )
 }
 
 pub type Clef {
@@ -145,24 +153,146 @@ pub fn pitches(score: Score) -> List(Pitch) {
 
 /// A scale, up one octave and back down.
 pub fn from_scale(subject: Scale, player: Instrument, tempo: Int) -> Score {
-  let shift = instrument.write_interval_for_key(player, subject.root)
-  let root = Pitch(subject.root, 4)
-  let up =
-    scale.intervals(subject.kind)
-    |> list.append([interval.degree(8, 0)])
-    |> list.map(fn(step) { interval.transpose(root, step) })
-  let notes = list.append(up, back_down(up))
+  from_pattern(subject, pattern.Straight, [subject.root], player, tempo)
+}
 
-  build(
-    title: pitch.class_to_string(interval.transpose_class(subject.root, shift))
+/// A pattern run through one key or through all of them.
+///
+/// Each key is written out in its own signature rather than in the first
+/// one's, because a sheet of twelve keys all spelled in C is a sheet of
+/// accidentals. That means bars that change key part way through the score,
+/// which is what `Measure.key` is for.
+pub fn from_pattern(
+  subject: Scale,
+  shape: Pattern,
+  keys: List(PitchClass),
+  player: Instrument,
+  tempo: Int,
+) -> Score {
+  let sections =
+    list.map(keys, fn(key) { section(subject.kind, shape, key, player, keys) })
+
+  Score(
+    title: pitch.class_to_string(heading_key(subject, sections))
       <> " "
-      <> scale.name(subject.kind),
+      <> scale.name(subject.kind)
+      <> case shape {
+      pattern.Straight -> ""
+      _ -> ", " <> string.lowercase(pattern.name(shape))
+    }
+      <> case keys {
+      [_] -> ""
+      _ -> ", round the keys"
+    },
     subtitle: instrument.label(player),
-    events: plain(hold_last(eighths(written(notes, shift, player))), []),
-    hint: interval.transpose_class(subject.root, shift),
-    tempo: tempo,
-    sound: instrument.sound(player),
+    time: #(4, 4),
+    unit: 8,
+    tempo: Some(tempo),
+    feel: None,
+    parts: [
+      keyed(
+        sections,
+        Treble,
+        instrument.label(player),
+        instrument.sound(player),
+      ),
+    ],
   )
+}
+
+/// One key's worth of the exercise, written and shaped into bars.
+///
+/// Spelled whichever of the enharmonic ways needs the smaller signature. The
+/// instrument's own rule looks at the key it is handed, which is enough for a
+/// major scale, but a mode reaches further round the line of fifths than its
+/// root does: concert E read by an alto is D-flat, and D-flat Dorian wants
+/// seven flats where C-sharp Dorian wants five sharps.
+fn section(
+  kind: ScaleKind,
+  shape: Pattern,
+  key: PitchClass,
+  player: Instrument,
+  keys: List(PitchClass),
+) -> #(PitchClass, Int, List(Measure)) {
+  let here = scale.Scale(key, kind)
+  let plain_shift = instrument.write_interval_for_key(player, key)
+  let respell = interval.degree(2, -2)
+  let last = case keys {
+    [_] -> True
+    _ -> False
+  }
+
+  [
+    plain_shift,
+    interval.add(plain_shift, respell),
+    interval.add(plain_shift, interval.negate(respell)),
+  ]
+  |> list.map(fn(shift) {
+    let written_key = interval.transpose_class(key, shift)
+    let events =
+      plain(
+        hold_last(eighths(written(pattern.notes(shape, here), shift, player))),
+        [],
+      )
+    let measures = case last {
+      True -> shaped(events)
+      False -> shaped(bar_out(events))
+    }
+    #(written_key, choose_signature(measures, written_key), measures)
+  })
+  |> list.fold(from: #(key, 99, []), with: fn(best, one) {
+    case int.absolute_value(one.1) < int.absolute_value(best.1) {
+      True -> one
+      False -> best
+    }
+  })
+}
+
+fn heading_key(
+  subject: Scale,
+  sections: List(#(PitchClass, Int, List(Measure))),
+) -> PitchClass {
+  case sections {
+    [#(key, _, _), ..] -> key
+    [] -> subject.root
+  }
+}
+
+/// Sections one after another, each starting a bar of its own and announcing
+/// the key it is in.
+fn keyed(
+  sections: List(#(PitchClass, Int, List(Measure))),
+  clef: Clef,
+  name: String,
+  sound: Int,
+) -> Part {
+  let leading = case sections {
+    [#(_, signature, _), ..] -> signature
+    [] -> 0
+  }
+  let measures =
+    sections
+    |> list.index_map(fn(section, at) {
+      let #(_, signature, measures) = section
+      // The header has already announced the first one.
+      case at, measures {
+        0, _ -> measures
+        _, [first, ..rest] -> [Measure(..first, key: Some(signature)), ..rest]
+        _, [] -> []
+      }
+    })
+    |> list.flatten
+
+  settle(measures, leading, clef, name, sound)
+}
+
+/// Round an exercise up to whole bars.
+fn bar_out(events: List(Event)) -> List(Event) {
+  let used = list.fold(events, 0, fn(sum, one) { sum + duration_of(one) })
+  case int.modulo(used, 8) {
+    Ok(0) | Error(_) -> events
+    Ok(over) -> list.append(events, [Rest(8 - over, None, None)])
+  }
 }
 
 /// A chord, spelled out as an arpeggio up and back down.
@@ -287,13 +417,14 @@ pub fn from_progression(
   let measures =
     list.map(moved.bars, fn(one) {
       Measure(
-        list.zip(
+        None,
+        events: list.zip(
           one.chords,
           progression.shares(list.length(one.chords), capacity),
         )
-        |> list.map(fn(entry) {
-          Spacer(entry.1, Some(chord.to_string(entry.0)), None)
-        }),
+          |> list.map(fn(entry) {
+            Spacer(entry.1, Some(chord.to_string(entry.0)), None)
+          }),
       )
     })
 
@@ -332,10 +463,19 @@ fn eighths(notes: List(Pitch)) -> List(#(Pitch, Int)) {
 
 /// Give the last note of an exercise a beat of its own, so it reads as an
 /// ending rather than as a line that ran out.
+///
+/// Only where the bar has room for it. A quarter note that will not fit is
+/// pushed into a bar of its own, and the exercise ends with a bar seven
+/// eighths long -- which is not a bar. An exercise that comes out to whole
+/// bars on its own is better left alone.
 fn hold_last(notes: List(#(Pitch, Int))) -> List(#(Pitch, Int)) {
-  case list.reverse(notes) {
-    [#(note, _), ..rest] -> list.reverse([#(note, 2), ..rest])
-    [] -> []
+  let room = case int.modulo(list.length(notes) - 1, 8) {
+    Ok(position) -> position <= 6
+    Error(_) -> False
+  }
+  case list.reverse(notes), room {
+    [#(note, _), ..rest], True -> list.reverse([#(note, 2), ..rest])
+    _, _ -> notes
   }
 }
 
@@ -462,14 +602,14 @@ fn into_measures(
     [] ->
       case held {
         [] -> list.reverse(done)
-        _ -> list.reverse([Measure(list.reverse(held)), ..done])
+        _ -> list.reverse([Measure(list.reverse(held), None), ..done])
       }
     [one, ..rest] -> {
       let length = duration_of(one)
       case held != [] && used + length > capacity {
         True ->
           into_measures(events, capacity, #([], 0), [
-            Measure(list.reverse(held)),
+            Measure(list.reverse(held), None),
             ..done
           ])
         False ->
@@ -506,30 +646,31 @@ fn with_positions(events: List(Event)) -> List(#(Int, Event)) {
 /// starting mid beat begins by filling out the beat it is in.
 fn spell_silences(subject: Measure) -> Measure {
   Measure(
-    with_positions(subject.events)
-    |> list.flat_map(fn(entry) {
-      let #(at, event) = entry
-      case event {
-        Rest(length, symbol, annotation) ->
-          writable(at, length)
-          |> list.index_map(fn(piece, index) {
-            case index {
-              // Whatever was attached belongs to the first piece only.
-              0 -> Rest(piece, symbol, annotation)
-              _ -> Rest(piece, None, None)
-            }
-          })
-        Spacer(length, symbol, annotation) ->
-          writable(at, length)
-          |> list.index_map(fn(piece, index) {
-            case index {
-              0 -> Spacer(piece, symbol, annotation)
-              _ -> Spacer(piece, None, None)
-            }
-          })
-        other -> [other]
-      }
-    }),
+    ..subject,
+    events: with_positions(subject.events)
+      |> list.flat_map(fn(entry) {
+        let #(at, event) = entry
+        case event {
+          Rest(length, symbol, annotation) ->
+            writable(at, length)
+            |> list.index_map(fn(piece, index) {
+              case index {
+                // Whatever was attached belongs to the first piece only.
+                0 -> Rest(piece, symbol, annotation)
+                _ -> Rest(piece, None, None)
+              }
+            })
+          Spacer(length, symbol, annotation) ->
+            writable(at, length)
+            |> list.index_map(fn(piece, index) {
+              case index {
+                0 -> Spacer(piece, symbol, annotation)
+                _ -> Spacer(piece, None, None)
+              }
+            })
+          other -> [other]
+        }
+      }),
   )
 }
 
@@ -571,7 +712,8 @@ fn beam_measure(subject: Measure, capacity: Int) -> Measure {
     |> with_positions
     |> list.map(fn(entry) { #(entry.0 / group_size, entry.1) })
   Measure(
-    list.index_map(groups, fn(entry, at) {
+    ..subject,
+    events: list.index_map(groups, fn(entry, at) {
       let #(group, event) = entry
       case event {
         // Only eighth notes beam; anything longer stands on its own.
@@ -672,7 +814,17 @@ fn needed(
 /// starts again from whatever the key signature says and only notes that
 /// disagree with the state so far need any ink.
 fn apply_accidentals(measures: List(Measure), signature: Int) -> List(Measure) {
-  list.map(measures, fn(one) {
+  let #(done, _) =
+    list.fold(measures, #([], signature), fn(state, one) {
+      let #(kept, active) = state
+      let signature = option.unwrap(one.key, active)
+      #([spell(one, signature), ..kept], signature)
+    })
+  list.reverse(done)
+}
+
+fn spell(one: Measure, signature: Int) -> Measure {
+  {
     let #(events, _) =
       list.fold(one.events, #([], dict.new()), fn(state, event) {
         let #(done, seen) = state
@@ -693,6 +845,6 @@ fn apply_accidentals(measures: List(Measure), signature: Int) -> List(Measure) {
           other -> #([other, ..done], seen)
         }
       })
-    Measure(list.reverse(events))
-  })
+    Measure(..one, events: list.reverse(events))
+  }
 }

@@ -14,6 +14,7 @@ import jazz/chord.{type Chord}
 import jazz/instrument.{type Instrument}
 import jazz/interval.{type Interval}
 import jazz/lick.{type Line, type Segment}
+import jazz/pattern.{type Pattern}
 import jazz/pitch.{type PitchClass}
 import jazz/progression.{type Progression}
 import jazz/scale.{type Scale}
@@ -22,7 +23,12 @@ const indent = "  "
 
 // --- Scales ------------------------------------------------------------------
 
-pub fn scale_view(subject: Scale, instrument: Instrument) -> String {
+pub fn scale_view(
+  subject: Scale,
+  shape: Pattern,
+  keys: List(PitchClass),
+  instrument: Instrument,
+) -> String {
   let shift = instrument.write_interval_for_key(instrument, subject.root)
   let concert = list.map(scale.notes(subject), pitch.class_to_string)
   let written =
@@ -60,9 +66,25 @@ pub fn scale_view(subject: Scale, instrument: Instrument) -> String {
       table(rows),
       "",
       indent <> scale.usage(subject.kind),
+      "",
+      indent <> exercise(shape, keys),
     ],
     "\n",
   )
+}
+
+/// What is actually being practised, under the scale it is built from.
+fn exercise(shape: Pattern, keys: List(PitchClass)) -> String {
+  pattern.name(shape)
+  <> ".  "
+  <> pattern.usage(shape)
+  <> case keys {
+    [_] -> ""
+    _ ->
+      "  Round the keys: "
+      <> string.join(list.map(keys, pitch.class_to_string), " ")
+      <> "."
+  }
 }
 
 // --- Chords ------------------------------------------------------------------

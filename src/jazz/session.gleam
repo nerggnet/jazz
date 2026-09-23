@@ -17,6 +17,7 @@ import jazz/internal/random
 import jazz/interval
 import jazz/lick.{type Level}
 import jazz/notation
+import jazz/pattern.{type Pattern}
 import jazz/pitch.{type PitchClass}
 import jazz/progression.{type Progression}
 import jazz/render/abc
@@ -38,6 +39,10 @@ pub type Session {
     /// Always the concert key, whatever instrument is selected.
     key: PitchClass,
     kind: ScaleKind,
+    /// Which exercise is made out of the scale, and whether it runs through
+    /// every key or stays in the one on screen.
+    shape: Pattern,
+    round_the_keys: Bool,
     chord_text: String,
     changes_text: String,
     progression_id: String,
@@ -67,6 +72,8 @@ pub type Action {
   /// hand back strings.
   ChooseKeyNamed(String)
   ChooseScaleNamed(String)
+  ChoosePatternNamed(String)
+  RoundTheKeys(Bool)
   ChooseLevelNamed(String)
   /// Move round the cycle of fourths: forwards for one, back for minus one.
   StepKey(Int)
@@ -95,6 +102,8 @@ pub fn new() -> Session {
     player: instrument.alto_sax(),
     key: pitch.natural(pitch.C),
     kind: scale.Dorian,
+    shape: pattern.Straight,
+    round_the_keys: False,
     chord_text: "Bb7#9",
     changes_text: "Dm7 G7 Cmaj7",
     progression_id: "ii-V-I",
@@ -164,6 +173,12 @@ pub fn update(session: Session, action: Action) -> Session {
       }
     PlayTheHorn(sounding) -> Session(..session, horn_sounds: sounding)
     SwingIt(swung) -> Session(..session, swing: swung)
+    RoundTheKeys(round) -> Session(..session, round_the_keys: round)
+    ChoosePatternNamed(name) ->
+      case pattern.from_string(name) {
+        Ok(shape) -> Session(..session, shape: shape)
+        Error(_) -> session
+      }
     ChooseTempoNamed(name) ->
       case int.parse(name) {
         Ok(beats) if beats >= 20 && beats <= 400 ->
@@ -245,15 +260,30 @@ fn engrave(session: Session, score: notation.Score) -> String {
   )
 }
 
+/// One key, or all twelve of them round the cycle of fourths.
+fn practice_keys(session: Session) -> List(PitchClass) {
+  case session.round_the_keys {
+    False -> [session.key]
+    True -> progression.cycle_of_fourths(session.key)
+  }
+}
+
 pub fn panel(session: Session) -> Panel {
   case session.view {
     ScaleView -> {
       let subject = scale.Scale(session.key, session.kind)
+      let keys = practice_keys(session)
       Panel(
-        text.scale_view(subject, session.player),
+        text.scale_view(subject, session.shape, keys, session.player),
         engrave(
           session,
-          notation.from_scale(subject, session.player, session.tempo),
+          notation.from_pattern(
+            subject,
+            session.shape,
+            keys,
+            session.player,
+            session.tempo,
+          ),
         ),
       )
     }

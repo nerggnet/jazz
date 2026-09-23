@@ -161,6 +161,15 @@ fn index_of(parts: List(Part), wanted: Part) -> Int {
 }
 
 fn measure(subject: Measure) -> String {
+  // A bar that changes key says so before its first note.
+  case subject.key {
+    Some(signature) -> "[K:" <> key_name(signature) <> "] "
+    None -> ""
+  }
+  <> written_measure(subject)
+}
+
+fn written_measure(subject: Measure) -> String {
   subject.events
   |> list.map(fn(one) { event(one) <> gap(one) })
   |> string.concat
