@@ -1249,3 +1249,128 @@ pub fn transpose(line: Line, by: interval.Interval) -> Line {
     }),
   )
 }
+
+// --- Articulation ------------------------------------------------------------
+//
+// Which notes are tongued and which are slurred is most of what separates a
+// jazz line from the same notes played straight, and on a horn it is audible
+// from across a room. It is also a convention rather than a matter of taste,
+// which is what makes it something that can be written down.
+
+/// How one note is attacked.
+pub type Mark {
+  Mark(
+    /// Played into from the note before it rather than tongued again.
+    joined: Bool,
+    accent: Bool,
+  )
+}
+
+/// A slur runs while the line stays inside this and breaks at anything wider:
+/// bebop slurs through steps and small skips, and tongues what it leaps to.
+const reach = 7
+
+/// How long a phrase has to be before its top note is worth marking. Two
+/// notes have a higher one by definition and it means nothing.
+const shapely = 3
+
+/// Where a note sits, once rests and triplets have been accounted for.
+type Placed {
+  Placed(note: Pitch, length: Int, at: Int, phrase: Int, held: Bool)
+}
+
+/// How each note of a line is attacked, one mark per note, in order.
+///
+/// Two rules, both of them the ones a method book gives. Eighths run slurred
+/// until the line leaps, and whatever it leaps to is tongued. The weight goes
+/// on the offbeat -- an accent on a tongued upbeat is the whole character of
+/// the idiom -- and on the top of a phrase, because that is where the phrase
+/// was going.
+pub fn phrasing(events: List(Event)) -> List(Mark) {
+  let notes = placed(events, 0, 0, [])
+  let tops = peaks(notes)
+  attacks(notes, tops, None, [])
+}
+
+fn placed(
+  events: List(Event),
+  at: Int,
+  phrase: Int,
+  acc: List(Placed),
+) -> List(Placed) {
+  case events {
+    [] -> list.reverse(acc)
+    // Three notes sharing the room of two all sit where the group does.
+    [Triplet, ..rest] ->
+      placed(
+        list.drop(rest, 3),
+        at + 2,
+        phrase,
+        list.fold(list.take(rest, 3), acc, fn(kept, one) {
+          case one {
+            Tone(note, _, held) -> [Placed(note, 1, at, phrase, held), ..kept]
+            _ -> kept
+          }
+        }),
+      )
+    [Tone(note, length, held), ..rest] ->
+      placed(rest, at + length, phrase, [
+        Placed(note, length, at, phrase, held),
+        ..acc
+      ])
+    // A silence ends a phrase, and nothing slurs across one.
+    [Rest(length), ..rest] -> placed(rest, at + length, phrase + 1, acc)
+  }
+}
+
+/// The highest note of each phrase worth pointing at, as a phrase number and
+/// the pitch that tops it.
+fn peaks(notes: List(Placed)) -> List(#(Int, Int)) {
+  notes
+  |> list.fold([], fn(found, one) {
+    let here = pitch.to_midi(one.note)
+    case list.key_find(found, one.phrase) {
+      Ok(highest) if highest >= here -> found
+      _ -> [
+        #(one.phrase, here),
+        ..list.filter(found, fn(entry) { entry.0 != one.phrase })
+      ]
+    }
+  })
+  |> list.filter(fn(entry) {
+    list.count(notes, fn(one) { one.phrase == entry.0 }) >= shapely
+  })
+}
+
+fn attacks(
+  notes: List(Placed),
+  tops: List(#(Int, Int)),
+  previous: Option(Placed),
+  acc: List(Mark),
+) -> List(Mark) {
+  case notes {
+    [] -> list.reverse(acc)
+    [one, ..rest] -> {
+      let joined = case previous {
+        Some(before) ->
+          before.phrase == one.phrase
+          && before.length == 1
+          // A note already held into this one says so with a tie, and does
+          // not need a slur saying it twice.
+          && !before.held
+          && int.absolute_value(
+            pitch.to_midi(one.note) - pitch.to_midi(before.note),
+          )
+          < reach
+        None -> False
+      }
+      let peak = case list.key_find(tops, one.phrase) {
+        Ok(highest) -> highest == pitch.to_midi(one.note)
+        Error(_) -> False
+      }
+      // A tongued upbeat, or the top of the phrase.
+      let accent = peak || { !joined && one.at % 2 == 1 }
+      attacks(rest, tops, Some(one), [Mark(joined, accent), ..acc])
+    }
+  }
+}

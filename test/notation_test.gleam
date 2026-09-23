@@ -137,6 +137,7 @@ pub fn a_held_note_does_not_beam_test() {
       None,
       notation.Alone,
       False,
+      notation.plainly,
     )
 }
 
@@ -488,4 +489,57 @@ fn whole_groups(events: List(notation.Event)) -> Nil {
     }
     [_, ..rest] -> whole_groups(rest)
   }
+}
+
+pub fn articulation_reaches_the_page_test() {
+  // What is tongued and what is slurred is most of what makes a line sound
+  // like the idiom, and none of it is any use if it stops at the engine.
+  let assert Ok(changes) =
+    progression.parse("|: Dm7 | G7 | Em7 | A7 | Dm7 | G7 | Cmaj7 | Cmaj7 :|")
+  let written =
+    abc.render(notation.from_line(
+      lick.over_progression(changes, lick.options(lick.Advanced, 3)),
+      "test",
+      PitchClass(C, 0),
+      concert(),
+      notation.default_tempo,
+    ))
+  assert string.contains(written, "!accent!")
+  assert string.contains(written, "(")
+  assert string.contains(written, ")")
+
+  // A slur that opens and never closes is a bracket, not a slur. Tuplet
+  // marks open with a bracket too, so those are counted out of it.
+  let slurs = fn(mark: String) {
+    list.length(string.split(string.replace(written, "(3", ""), mark)) - 1
+  }
+  assert slurs("(") == slurs(")")
+  assert slurs("(") > 0
+}
+
+pub fn the_backing_is_left_unmarked_test() {
+  // Articulation is for the line. A walking bass is walked, and a comp is
+  // not phrased by anybody but the pianist.
+  let assert Ok(changes) = progression.parse("| Dm7 G7 | Cmaj7 |")
+  let score =
+    notation.from_line_with_backing(
+      lick.over_progression(changes, lick.options(lick.Advanced, 3)),
+      changes,
+      "test",
+      concert(),
+      notation.default_tempo,
+    )
+  let assert [piano, bass, _] = score.parts
+  list.each([piano, bass], fn(part: notation.Part) {
+    list.each(part.measures, fn(measure) {
+      list.each(measure.events, fn(event) {
+        case event {
+          notation.Note(phrasing: phrasing, ..) -> {
+            assert phrasing == notation.plainly
+          }
+          _ -> Nil
+        }
+      })
+    })
+  })
 }

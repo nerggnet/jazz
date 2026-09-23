@@ -565,3 +565,116 @@ pub fn a_triplet_takes_the_room_of_two_eighths_test() {
   assert lick.room([lick.Triplet, note, note, note]) == 2
   assert lick.room([note, lick.Triplet, note, note, note, lick.Rest(4)]) == 7
 }
+
+// --- Articulation ------------------------------------------------------------
+
+fn marks(level: lick.Level, seed: Int) -> List(lick.Mark) {
+  let one = chorus(level, seed)
+  lick.phrasing(list.flat_map(one.segments, fn(each) { each.events }))
+}
+
+fn every_mark() -> List(lick.Mark) {
+  [lick.Beginner, lick.Intermediate, lick.Advanced]
+  |> list.flat_map(fn(level) {
+    [1, 2, 3, 5, 8, 13] |> list.flat_map(fn(seed) { marks(level, seed) })
+  })
+}
+
+pub fn there_is_a_mark_for_every_note_test() {
+  // The marks are read off against the notes one for one, so a line that
+  // came back a mark short would put every slur after it in the wrong place.
+  list.each([lick.Beginner, lick.Intermediate, lick.Advanced], fn(level) {
+    list.each([1, 2, 3, 5, 8, 13, 21], fn(seed) {
+      let one = chorus(level, seed)
+      let events = list.flat_map(one.segments, fn(each) { each.events })
+      let notes =
+        list.count(events, fn(event) {
+          case event {
+            lick.Tone(_, _, _) -> True
+            _ -> False
+          }
+        })
+      assert list.length(lick.phrasing(events)) == notes
+    })
+  })
+}
+
+pub fn a_line_is_mostly_slurred_test() {
+  // Bebop is a slurred idiom with tonguing for emphasis, not the other way
+  // round. Somewhere over half and under all of it.
+  let all = every_mark()
+  let joined = list.count(all, fn(one) { one.joined })
+  assert joined * 2 > list.length(all)
+  assert joined < list.length(all)
+}
+
+pub fn accents_are_marks_rather_than_wallpaper_test() {
+  // An accent on every note says nothing at all. A handful a phrase is the
+  // most a reader can act on.
+  let all = every_mark()
+  let accents = list.count(all, fn(one) { one.accent })
+  assert accents > 0
+  assert accents * 3 < list.length(all)
+}
+
+pub fn nothing_is_slurred_across_a_rest_test() {
+  // A phrase ends where the breath does.
+  list.each([lick.Beginner, lick.Intermediate, lick.Advanced], fn(level) {
+    list.each([1, 2, 3, 5, 8], fn(seed) {
+      let one = chorus(level, seed)
+      let events = list.flat_map(one.segments, fn(each) { each.events })
+      after_silence(events, lick.phrasing(events), True)
+    })
+  })
+}
+
+/// Walk the events and the marks together, checking the first note after
+/// any silence is tongued.
+fn after_silence(
+  events: List(lick.Event),
+  marks: List(lick.Mark),
+  fresh: Bool,
+) -> Nil {
+  case events {
+    [] -> Nil
+    [lick.Rest(_), ..rest] -> after_silence(rest, marks, True)
+    [lick.Triplet, ..rest] -> after_silence(rest, marks, fresh)
+    [lick.Tone(_, _, _), ..rest] ->
+      case marks {
+        [] -> Nil
+        [one, ..later] -> {
+          assert !{ fresh && one.joined }
+          after_silence(rest, later, False)
+        }
+      }
+  }
+}
+
+pub fn a_leap_is_tongued_test() {
+  // The line slurs through steps and small skips; what it leaps to is
+  // attacked. A fifth is where that line is drawn.
+  list.each([lick.Intermediate, lick.Advanced], fn(level) {
+    list.each([1, 2, 3, 5, 8], fn(seed) {
+      let one = chorus(level, seed)
+      let events = list.flat_map(one.segments, fn(each) { each.events })
+      let notes =
+        list.filter_map(events, fn(event) {
+          case event {
+            lick.Tone(note, length, held) -> Ok(#(note, length, held))
+            _ -> Error(Nil)
+          }
+        })
+      list.zip(pairs(notes), list.drop(lick.phrasing(events), 1))
+      |> list.each(fn(entry) {
+        let #(#(before, after), mark) = entry
+        let leap =
+          int.absolute_value(pitch.to_midi(after.0) - pitch.to_midi(before.0))
+        assert !{ mark.joined && leap >= 7 }
+        // And nothing is slurred out of a note longer than an eighth.
+        assert !{ mark.joined && before.1 > 1 }
+        // A tie already says the note carries over.
+        assert !{ mark.joined && before.2 }
+      })
+    })
+  })
+}

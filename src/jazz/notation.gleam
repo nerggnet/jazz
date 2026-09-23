@@ -29,6 +29,24 @@ import jazz/pitch.{type Pitch, type PitchClass, Pitch}
 import jazz/progression.{type Progression}
 import jazz/scale.{type Scale, type ScaleKind}
 
+/// A mark over a note saying how it is attacked.
+pub type Articulation {
+  Accent
+  Staccato
+}
+
+/// How a note is attacked and joined to what is around it.
+///
+/// Slurs are kept as a pair of edges rather than as spans, the same way the
+/// tuplet mark is a mark: it is what both notations write, and it survives
+/// the note being moved into a different bar.
+pub type Phrasing {
+  Phrasing(mark: Option(Articulation), opens: Bool, closes: Bool)
+}
+
+/// Tongued, unmarked, and joined to nothing.
+pub const plainly = Phrasing(None, False, False)
+
 /// How a note joins the ones beside it under a beam.
 pub type Beam {
   Alone
@@ -49,6 +67,7 @@ pub type Event {
     beam: Beam,
     /// Held into the note after it rather than played again.
     tied: Bool,
+    phrasing: Phrasing,
   )
   /// Notes sounding together, as a piano plays a chord. Accidentals are
   /// decided per note, in the same order.
@@ -392,7 +411,9 @@ pub fn from_line_with_backing(
   // two apiece.
   let walking =
     comp.walking(changes)
-    |> list.map(fn(one) { Note(one, 2, None, None, None, Alone, False) })
+    |> list.map(fn(one) {
+      Note(one, 2, None, None, None, Alone, False, plainly)
+    })
 
   Score(
     title: heading,
@@ -419,29 +440,61 @@ pub fn from_line_with_backing(
 }
 
 fn line_events(moved: Line) -> List(Event) {
-  list.flat_map(moved.segments, fn(segment) {
-    // The chord symbol belongs to the bar the segment starts, not to every
-    // note in it.
-    carrying(segment.events, Some(chord.to_string(segment.chord)), [])
-  })
+  // The chord symbol belongs to the bar the segment starts, not to every
+  // note in it; the articulation is decided over the whole line, because a
+  // slur does not know where one chord stops and the next starts.
+  let labelled =
+    list.flat_map(moved.segments, fn(segment) {
+      let symbol = chord.to_string(segment.chord)
+      list.index_map(segment.events, fn(event, at) {
+        #(event, case at {
+          0 -> Some(symbol)
+          _ -> None
+        })
+      })
+    })
+  carrying(labelled, lick.phrasing(list.map(labelled, fn(one) { one.0 })), [])
 }
 
 fn carrying(
-  events: List(lick.Event),
-  label: Option(String),
+  items: List(#(lick.Event, Option(String))),
+  marks: List(lick.Mark),
   acc: List(Event),
 ) -> List(Event) {
-  case events {
+  case items {
     [] -> list.reverse(acc)
-    [one, ..rest] -> {
-      let written = case one {
-        lick.Tone(note, length, held) ->
-          Note(note, length, None, label, None, Alone, held)
-        lick.Rest(length) -> Rest(length, label, None)
-        lick.Triplet -> Tuplet(3, 2, label, None)
+    [#(one, label), ..rest] ->
+      case one {
+        lick.Rest(length) ->
+          carrying(rest, marks, [Rest(length, label, None), ..acc])
+        lick.Triplet ->
+          carrying(rest, marks, [Tuplet(3, 2, label, None), ..acc])
+        lick.Tone(note, length, held) -> {
+          let #(mark, later) = case marks {
+            [first, ..more] -> #(first, more)
+            [] -> #(lick.Mark(False, False), [])
+          }
+          // A slur is a pair of edges, so where it opens and closes has to
+          // be read off which of the notes around it are joined on.
+          let next = case later {
+            [after, ..] -> after.joined
+            [] -> False
+          }
+          let phrasing =
+            Phrasing(
+              case mark.accent {
+                True -> Some(Accent)
+                False -> None
+              },
+              !mark.joined && next,
+              mark.joined && !next,
+            )
+          carrying(rest, later, [
+            Note(note, length, None, label, None, Alone, held, phrasing),
+            ..acc
+          ])
+        }
       }
-      carrying(rest, None, [written, ..acc])
-    }
   }
 }
 
@@ -535,6 +588,7 @@ fn plain(
       None,
       Alone,
       False,
+      plainly,
     )
   })
 }

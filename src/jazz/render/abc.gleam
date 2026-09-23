@@ -11,11 +11,12 @@
 
 import gleam/int
 import gleam/list
-import gleam/option.{None, Some}
+import gleam/option.{type Option, None, Some}
 import gleam/string
 import jazz/notation.{
-  type Clef, type Event, type Measure, type Part, type Score, Bass, ContinueBeam,
-  Note, Rest, Spacer, Stack, StartBeam, Treble, Tuplet,
+  type Articulation, type Clef, type Event, type Measure, type Part, type Score,
+  Accent, Bass, ContinueBeam, Note, Rest, Spacer, Staccato, Stack, StartBeam,
+  Treble, Tuplet,
 }
 import jazz/pitch.{type Pitch}
 
@@ -189,11 +190,22 @@ fn gap(one: Event) -> String {
 
 fn event(one: Event) -> String {
   case one {
-    Note(note, duration, accidental, chord, annotation, _, tied) ->
+    Note(note, duration, accidental, chord, annotation, _, tied, phrasing) ->
       decorations(chord, annotation)
+      // A mark on a note goes before the note, and so does the bracket that
+      // opens a slur; the one that closes it comes after.
+      <> attack(phrasing.mark)
+      <> case phrasing.opens {
+        True -> "("
+        False -> ""
+      }
       <> accidental_mark(accidental)
       <> note_name(note)
       <> length(duration)
+      <> case phrasing.closes {
+        True -> ")"
+        False -> ""
+      }
       // A hyphen after a note ties it to the next one of the same pitch.
       <> case tied {
         True -> "-"
@@ -268,6 +280,14 @@ fn accidental_mark(accidental: option.Option(Int)) -> String {
 
 /// Lengths are multiples of the unit note length declared in the header, and
 /// a single unit is written by leaving the number off.
+fn attack(mark: Option(Articulation)) -> String {
+  case mark {
+    Some(Accent) -> "!accent!"
+    Some(Staccato) -> "!staccato!"
+    None -> ""
+  }
+}
+
 fn length(duration: Int) -> String {
   case duration {
     1 -> ""

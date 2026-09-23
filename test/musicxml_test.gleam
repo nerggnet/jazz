@@ -266,3 +266,23 @@ pub fn every_horn_is_named_and_sounded_test() {
     )
   })
 }
+
+pub fn slurs_and_accents_reach_the_file_test() {
+  let assert Ok(changes) =
+    progression.parse("|: Dm7 | G7 | Em7 | A7 | Dm7 | G7 | Cmaj7 | Cmaj7 :|")
+  let written =
+    musicxml.render(notation.from_line(
+      lick.over_progression(changes, lick.options(lick.Advanced, 3)),
+      "test",
+      PitchClass(C, 0),
+      concert(),
+      notation.default_tempo,
+    ))
+  assert string.contains(written, "<slur type=\"start\" number=\"1\"/>")
+  assert string.contains(written, "<slur type=\"stop\" number=\"1\"/>")
+  assert string.contains(written, "<accent/>")
+  // Every slur that opens has to close, or a reader draws one to the end of
+  // the piece.
+  let count = fn(mark) { list.length(string.split(written, mark)) - 1 }
+  assert count("<slur type=\"start\"") == count("<slur type=\"stop\"")
+}

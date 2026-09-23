@@ -354,7 +354,7 @@ fn written_event(
   last: Bool,
 ) -> List(String) {
   case one {
-    Note(note, length, accidental, symbol, _, beam, holds) ->
+    Note(note, length, accidental, symbol, _, beam, holds, phrasing) ->
       list.append(
         harmony(symbol),
         printed(
@@ -367,6 +367,7 @@ fn written_event(
           last,
           beam_mark(beam),
           False,
+          phrasing,
         ),
       )
     Stack(pitches, length, accidentals, symbol, _) ->
@@ -384,6 +385,7 @@ fn written_event(
               last,
               [],
               at > 0,
+              notation.plainly,
             )
           })
           |> list.flatten,
@@ -401,6 +403,7 @@ fn written_event(
           last,
           [],
           False,
+          notation.plainly,
         ),
       )
     // Time that passes with nothing printed in it: exactly what `forward` is.
@@ -431,6 +434,7 @@ fn printed(
   last: Bool,
   beam: List(String),
   stacked: Bool,
+  phrasing: notation.Phrasing,
 ) -> List(String) {
   list.flatten([
     ["      <note>"],
@@ -474,7 +478,7 @@ fn printed(
       None -> []
     },
     beam,
-    notations(group, last, tied, holds),
+    notations(group, last, tied, holds, phrasing),
     ["      </note>"],
   ])
 }
@@ -484,6 +488,7 @@ fn notations(
   last: Bool,
   tied: Int,
   holds: Bool,
+  phrasing: notation.Phrasing,
 ) -> List(String) {
   let marks =
     list.flatten([
@@ -501,6 +506,27 @@ fn notations(
         ]
         Some(_), True -> ["          <tuplet type=\"stop\"/>"]
         _, _ -> []
+      },
+      case phrasing.closes {
+        True -> ["          <slur type=\"stop\" number=\"1\"/>"]
+        False -> []
+      },
+      case phrasing.opens {
+        True -> ["          <slur type=\"start\" number=\"1\"/>"]
+        False -> []
+      },
+      case phrasing.mark {
+        Some(notation.Accent) -> [
+          "          <articulations>",
+          "            <accent/>",
+          "          </articulations>",
+        ]
+        Some(notation.Staccato) -> [
+          "          <articulations>",
+          "            <staccato/>",
+          "          </articulations>",
+        ]
+        None -> []
       },
     ])
   case marks {
