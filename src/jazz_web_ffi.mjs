@@ -153,9 +153,19 @@ function lower() {
   clock = null;
 }
 
+// The horn is the second staff; the backing is written above it.
+const HORN = 1;
+
+/// Take a voice out of what the synth is about to play.
+function mute(synth, voice) {
+  const tracks = synth.flattened && synth.flattened.tracks;
+  if (!tracks || tracks.length <= voice) return;
+  tracks.splice(voice, 1);
+}
+
 // --- Sound -------------------------------------------------------------------
 
-export function play(abc, onEnded) {
+export function play(abc, quietHorn, onEnded) {
   const abcjs = library();
   if (!abcjs || !abcjs.synth.supportsAudio()) {
     onEnded();
@@ -185,7 +195,15 @@ export function play(abc, onEnded) {
       visualObj: drawn.tunes[0],
       options: { chordsOff: staves(drawn.tunes[0]) > 1 },
     })
-    .then(() => synth.prime())
+    .then(() => {
+      // Silencing the horn has to happen here. `voicesOff` only reaches the
+      // MIDI-file writer; the synth flattens the tune into one track per
+      // voice and never looks at that option. The tracks are still sitting
+      // on the synth untouched, though, so dropping the horn's before the
+      // notes are loaded is the same edit one step later.
+      if (quietHorn && staves(drawn.tunes[0]) > 1) mute(synth, HORN);
+      return synth.prime();
+    })
     .then((response) => {
       // A newer request may have replaced this one while the notes loaded.
       if (playing !== synth) return;

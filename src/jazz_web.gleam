@@ -55,7 +55,10 @@ fn update(model: Model, message: Msg) -> #(Model, Effect(Msg)) {
     }
     Play ->
       case session.panel(model.session) {
-        session.Panel(_, abc) -> #(Model(..model, playing: True), sound(abc))
+        session.Panel(_, abc) -> #(
+          Model(..model, playing: True),
+          sound(abc, !model.session.horn_sounds),
+        )
         session.Problem(_) -> #(model, effect.none())
       }
     Hush -> #(Model(..model, playing: False), silence())
@@ -63,8 +66,8 @@ fn update(model: Model, message: Msg) -> #(Model, Effect(Msg)) {
   }
 }
 
-fn sound(abc: String) -> Effect(Msg) {
-  effect.from(fn(dispatch) { play(abc, fn() { dispatch(Ended) }) })
+fn sound(abc: String, quiet_horn: Bool) -> Effect(Msg) {
+  effect.from(fn(dispatch) { play(abc, quiet_horn, fn() { dispatch(Ended) }) })
 }
 
 fn silence() -> Effect(Msg) {
@@ -443,9 +446,9 @@ fn render_notation(abc: String) -> String {
 }
 
 @external(javascript, "./jazz_web_ffi.mjs", "play")
-fn play(abc: String, on_ended: fn() -> Nil) -> Nil {
-  case abc {
-    _ -> on_ended()
+fn play(abc: String, quiet_horn: Bool, on_ended: fn() -> Nil) -> Nil {
+  case abc, quiet_horn {
+    _, _ -> on_ended()
   }
 }
 
