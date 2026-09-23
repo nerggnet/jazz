@@ -284,6 +284,23 @@ button.primary:hover {
   border-color: var(--quiet);
 }
 
+.keep {
+  appearance: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--quiet);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 5px 11px;
+  cursor: pointer;
+}
+
+.keep:hover {
+  color: var(--ink);
+  border-color: var(--edge);
+}
+
 .play {
   appearance: none;
   font: inherit;

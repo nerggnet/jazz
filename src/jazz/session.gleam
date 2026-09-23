@@ -10,7 +10,9 @@
 //// on the same theory underneath.
 
 import gleam/int
+import gleam/list
 import gleam/option.{None, Some}
+import gleam/string
 import jazz/chord
 import jazz/instrument.{type Instrument}
 import jazz/internal/random
@@ -21,6 +23,7 @@ import jazz/pattern.{type Pattern}
 import jazz/pitch.{type PitchClass}
 import jazz/progression.{type Progression}
 import jazz/render/abc
+import jazz/render/musicxml
 import jazz/render/text
 import jazz/scale.{type ScaleKind}
 import jazz/tune
@@ -262,13 +265,11 @@ fn heading(session: Session, built: Progression) -> String {
 
 /// Every score leaves here the same way, marked with the feel it is meant to
 /// be read in.
-fn engrave(session: Session, score: notation.Score) -> String {
-  abc.render(
-    notation.Score(..score, feel: case session.swing {
-      True -> Some("Swing")
-      False -> None
-    }),
-  )
+fn marked(session: Session, score: notation.Score) -> notation.Score {
+  notation.Score(..score, feel: case session.swing {
+    True -> Some("Swing")
+    False -> None
+  })
 }
 
 /// One key, or all twelve of them round the cycle of fourths.
@@ -280,13 +281,35 @@ fn practice_keys(session: Session) -> List(PitchClass) {
 }
 
 pub fn panel(session: Session) -> Panel {
+  case showing(session) {
+    Error(message) -> Problem(message)
+    Ok(#(readout, score)) -> Panel(readout, abc.render(score))
+  }
+}
+
+/// The same thing as a file to keep: what it should be called, and what goes
+/// in it.
+///
+/// MusicXML rather than ABC, because the point of taking it away is to open
+/// it in something that can lay it out and print it, and that is the format
+/// those programs read.
+pub fn sheet(session: Session) -> Result(#(String, String), String) {
+  case showing(session) {
+    Error(message) -> Error(message)
+    Ok(#(_, score)) ->
+      Ok(#(filename(score.title) <> ".musicxml", musicxml.render(score)))
+  }
+}
+
+/// What is on screen: the terminal view of it, and the score behind it.
+fn showing(session: Session) -> Result(#(String, notation.Score), String) {
   case session.view {
     ScaleView -> {
       let subject = scale.Scale(session.key, session.kind)
       let keys = practice_keys(session)
-      Panel(
+      Ok(#(
         text.scale_view(subject, session.shape, keys, session.player),
-        engrave(
+        marked(
           session,
           notation.from_pattern(
             subject,
@@ -296,48 +319,48 @@ pub fn panel(session: Session) -> Panel {
             session.tempo,
           ),
         ),
-      )
+      ))
     }
 
     ChordView ->
       case chord.parse(session.chord_text) {
-        Error(message) -> Problem(message)
+        Error(message) -> Error(message)
         Ok(subject) ->
-          Panel(
+          Ok(#(
             text.chord_view(subject, session.player),
-            engrave(
+            marked(
               session,
               notation.from_chord(subject, session.player, session.tempo),
             ),
-          )
+          ))
       }
 
     ProgressionView ->
       case changes(session) {
-        Error(message) -> Problem(message)
+        Error(message) -> Error(message)
         Ok(built) ->
-          Panel(
+          Ok(#(
             text.progression_view(built, session.player),
-            engrave(
+            marked(
               session,
               notation.from_progression(built, session.player, session.tempo),
             ),
-          )
+          ))
       }
 
     LineView ->
       case changes(session) {
-        Error(message) -> Problem(message)
+        Error(message) -> Error(message)
         Ok(built) -> {
           let line = lick.over_progression(built, options(session))
-          Panel(
+          Ok(#(
             text.lick_view(
               line,
               heading(session, built),
               session.player,
               built.key,
             ),
-            engrave(
+            marked(
               session,
               notation.from_line_with_backing(
                 line,
@@ -347,27 +370,65 @@ pub fn panel(session: Session) -> Panel {
                 session.tempo,
               ),
             ),
-          )
+          ))
         }
       }
 
     AnalysisView ->
       case changes(session) {
-        Error(message) -> Problem(message)
+        Error(message) -> Error(message)
         Ok(built) ->
-          Panel(
+          Ok(#(
             text.analysis_view(
               progression.chords(built),
               heading(session, built),
               session.player,
               built.key,
             ),
-            engrave(
+            marked(
               session,
               notation.from_progression(built, session.player, session.tempo),
             ),
-          )
+          ))
       }
+  }
+}
+
+/// A title turned into something a file system will not argue with.
+fn filename(title: String) -> String {
+  let kept =
+    title
+    |> string.lowercase
+    |> string.to_graphemes
+    |> list.map(fn(one) {
+      case string.contains("abcdefghijklmnopqrstuvwxyz0123456789", one) {
+        True -> one
+        False -> "-"
+      }
+    })
+    |> string.concat
+  case trimmed(squashed(kept, "")) {
+    "" -> "jazz"
+    other -> other
+  }
+}
+
+fn squashed(text: String, acc: String) -> String {
+  case string.starts_with(text, "--") {
+    True -> squashed(string.drop_start(text, 1), acc)
+    False ->
+      case string.pop_grapheme(text) {
+        Error(_) -> acc
+        Ok(#(one, rest)) -> squashed(rest, acc <> one)
+      }
+  }
+}
+
+fn trimmed(text: String) -> String {
+  case string.starts_with(text, "-"), string.ends_with(text, "-") {
+    True, _ -> trimmed(string.drop_start(text, 1))
+    _, True -> trimmed(string.drop_end(text, 1))
+    _, _ -> text
   }
 }
 

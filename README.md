@@ -350,6 +350,12 @@ notation is drawn by [abcjs](https://www.abcjs.net/) from the same ABC the CLI
 emits, and the **Play** button plays it back, which is the thing a terminal
 cannot do and the reason the browser was worth the trouble.
 
+Above the music is a row of switches for how it is played rather than what is
+played: **Swing** or straight, a **count-in**, whether it comes round again,
+and whether the horn part sounds at all — turn it off and the rhythm section
+is a backing to play against. **Download** saves whatever is on screen as
+MusicXML, named after the music, for a notation program to lay out and print.
+
 The model, the update and every decision about what to show live in
 `jazz/session`, which is pure and tested on both compilation targets. What is
 in `jazz_web` is elements and the bridge to abcjs; there is no music theory in

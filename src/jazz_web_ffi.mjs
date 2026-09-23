@@ -335,3 +335,24 @@ export function stop() {
   }
   return undefined;
 }
+
+// --- Taking it away ----------------------------------------------------------
+
+/// Hand the browser a file to save.
+///
+/// A blob rather than a data URI: a twelve key exercise runs to a hundred
+/// kilobytes of XML, which is past what some browsers will accept in a URL,
+/// and the link never has to exist anywhere the page can see it.
+export function download(name, text, kind) {
+  const url = URL.createObjectURL(new Blob([text], { type: kind }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = name;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  // Long enough for the save to have started; the blob is held in memory
+  // until this happens.
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  return undefined;
+}

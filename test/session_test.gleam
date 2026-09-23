@@ -326,3 +326,49 @@ pub fn a_practice_pattern_reaches_the_page_test() {
   assert string.contains(abc_of(round), "round the keys")
   assert string.contains(abc_of(round), "[K:")
 }
+
+pub fn every_view_can_be_taken_away_test() {
+  // Whatever is on screen can be saved, named after what it is.
+  list.each(session.all_views(), fn(view) {
+    let assert Ok(#(name, body)) = session.sheet(showing(view))
+    assert string.ends_with(name, ".musicxml")
+    // A file system will not argue with any of this.
+    assert string.lowercase(name) == name
+    assert !string.contains(name, " ")
+    assert !string.contains(name, "/")
+    assert !string.starts_with(name, "-")
+    assert string.contains(body, "<score-partwise")
+    assert string.contains(body, "</score-partwise>")
+  })
+}
+
+pub fn the_file_is_named_after_the_music_test() {
+  let assert Ok(#(name, _)) = session.sheet(showing(session.LineView))
+  assert name == "major-ii-v-i-in-a-concert-c.musicxml"
+
+  // And follows it when the music changes.
+  let moved =
+    session.update(showing(session.ScaleView), session.RoundTheKeys(True))
+  let assert Ok(#(rounded, _)) = session.sheet(moved)
+  assert string.contains(rounded, "round-the-keys")
+}
+
+pub fn a_broken_view_has_nothing_to_take_away_test() {
+  let broken =
+    session.update(showing(session.ChordView), session.TypeChord("nonsense"))
+  let assert session.Problem(complaint) = session.panel(broken)
+  let assert Error(message) = session.sheet(broken)
+  // The same complaint either way round, rather than two ideas of what is
+  // wrong with it.
+  assert message == complaint
+}
+
+pub fn the_feel_reaches_the_file_too_test() {
+  let assert Ok(#(_, swung)) = session.sheet(showing(session.LineView))
+  assert string.contains(swung, "Swing")
+
+  let straight =
+    session.update(showing(session.LineView), session.SwingIt(False))
+  let assert Ok(#(_, plain)) = session.sheet(straight)
+  assert !string.contains(plain, "Swing")
+}

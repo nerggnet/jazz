@@ -31,6 +31,7 @@ pub type Msg {
   Play
   Hush
   Ended
+  Keep
 }
 
 pub fn main() -> Nil {
@@ -68,6 +69,13 @@ fn update(model: Model, message: Msg) -> #(Model, Effect(Msg)) {
         )
         session.Problem(_) -> #(model, effect.none())
       }
+    // Nothing about the page changes: the file is handed to the browser and
+    // the browser takes it from there.
+    Keep ->
+      case session.sheet(model.session) {
+        Ok(#(name, body)) -> #(model, keep(name, body))
+        Error(_) -> #(model, effect.none())
+      }
     Hush -> #(Model(..model, playing: False), silence())
     Ended -> #(Model(..model, playing: False), effect.none())
   }
@@ -82,6 +90,13 @@ fn sound(
 ) -> Effect(Msg) {
   effect.from(fn(dispatch) {
     play(abc, quiet_horn, swing, count_in, again, fn() { dispatch(Ended) })
+  })
+}
+
+/// MusicXML is text, and its media type is the one notation programs look for.
+fn keep(name: String, body: String) -> Effect(Msg) {
+  effect.from(fn(_) {
+    download(name, body, "application/vnd.recordare.musicxml+xml")
   })
 }
 
@@ -460,6 +475,7 @@ fn stage(model: Model) -> Element(Msg) {
             loop_switch(model),
             horn_switch(model),
             play_button(model),
+            keep_button(),
           ]),
         ]),
         html.pre([attribute.class("readout")], [html.text(readout)]),
@@ -528,6 +544,18 @@ fn horn_switch(model: Model) -> Element(Msg) {
   }
 }
 
+/// The score as a file, for a music stand rather than a screen.
+fn keep_button() -> Element(Msg) {
+  html.button(
+    [
+      attribute.class("keep"),
+      attribute.title("Download as MusicXML"),
+      event.on_click(Keep),
+    ],
+    [html.text("Download")],
+  )
+}
+
 fn play_button(model: Model) -> Element(Msg) {
   case model.playing {
     True ->
@@ -564,6 +592,13 @@ fn play(
 ) -> Nil {
   case abc, quiet_horn, swing, count_in, again {
     _, _, _, _, _ -> on_ended()
+  }
+}
+
+@external(javascript, "./jazz_web_ffi.mjs", "download")
+fn download(name: String, body: String, kind: String) -> Nil {
+  case name, body, kind {
+    _, _, _ -> Nil
   }
 }
 
