@@ -95,6 +95,10 @@ pub type Score {
     /// The note value durations are counted in: 8 means eighth notes.
     unit: Int,
     tempo: Option(Int),
+    /// How the eighths are meant to be read -- "Swing" or nothing. Printed
+    /// beside the tempo, because a chart that swings without saying so leaves
+    /// every reader to decide for themselves.
+    feel: Option(String),
     parts: List(Part),
   )
 }
@@ -215,17 +219,21 @@ pub fn from_line_with_backing(
   let shift = instrument.write_interval_for_key(player, changes.key)
   let moved = lick.transpose(line, shift) |> lick.simplify_spelling
 
-  let backing =
-    comp.under(changes)
-    |> list.map(fn(one) {
-      Stack(
-        one.notes,
-        one.duration,
-        list.map(one.notes, fn(_) { None }),
-        None,
-        None,
-      )
+  let comping =
+    comp.comping(changes)
+    |> list.map(fn(stroke) {
+      case stroke {
+        comp.Strike(notes, length) ->
+          Stack(notes, length, list.map(notes, fn(_) { None }), None, None)
+        comp.Wait(length) -> Rest(length, None, None)
+      }
     })
+
+  // A walking bass is quarter notes and nothing else, which in eighths is a
+  // two apiece.
+  let walking =
+    comp.walking(changes)
+    |> list.map(fn(one) { Note(one, 2, None, None, None, Alone, False) })
 
   Score(
     title: heading,
@@ -233,8 +241,10 @@ pub fn from_line_with_backing(
     time: #(4, 4),
     unit: 8,
     tempo: Some(tempo),
+    feel: None,
     parts: [
-      assemble(backing, changes.key, Bass, "Piano", instrument.piano),
+      assemble_in(comping, changes.key, Treble, "Piano", instrument.piano),
+      assemble_in(walking, changes.key, Bass, "Bass", instrument.bass),
       assemble(
         line_events(moved),
         interval.transpose_class(changes.key, shift),
@@ -293,6 +303,7 @@ pub fn from_progression(
     time: #(4, 4),
     unit: 8,
     tempo: Some(tempo),
+    feel: None,
     parts: [
       Part(
         name: instrument.label(player),
@@ -385,6 +396,7 @@ fn build(
     time: #(4, 4),
     unit: 8,
     tempo: Some(tempo),
+    feel: None,
     parts: [assemble(events, hint, Treble, subtitle, sound)],
   )
 }
@@ -397,13 +409,42 @@ fn assemble(
   name: String,
   sound: Int,
 ) -> Part {
+  let measures = shaped(events)
+  settle(measures, choose_signature(measures, hint), clef, name, sound)
+}
+
+/// A staff that reads in a key somebody has already decided on.
+///
+/// The rhythm section gets this rather than the fewest-accidentals rule. A
+/// walking bass is half chromatic approach notes, and turning that rule loose
+/// on them lands the bass in a different key signature from the piano standing
+/// next to it, which is nobody's idea of a score.
+fn assemble_in(
+  events: List(Event),
+  key: PitchClass,
+  clef: Clef,
+  name: String,
+  sound: Int,
+) -> Part {
+  let measures = shaped(events)
+  settle(measures, signature_near(key), clef, name, sound)
+}
+
+fn shaped(events: List(Event)) -> List(Measure) {
   let capacity = 8
-  let measures =
-    events
-    |> into_measures(capacity, #([], 0), [])
-    |> list.map(spell_silences)
-    |> list.map(beam_measure(_, capacity))
-  let signature = choose_signature(measures, hint)
+  events
+  |> into_measures(capacity, #([], 0), [])
+  |> list.map(spell_silences)
+  |> list.map(beam_measure(_, capacity))
+}
+
+fn settle(
+  measures: List(Measure),
+  signature: Int,
+  clef: Clef,
+  name: String,
+  sound: Int,
+) -> Part {
   Part(name, clef, sound, signature, apply_accidentals(measures, signature))
 }
 

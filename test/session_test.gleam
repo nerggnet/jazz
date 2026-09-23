@@ -273,3 +273,22 @@ pub fn instruments_are_all_reachable_test() {
     })
   })
 }
+
+pub fn the_feel_reaches_every_chart_test() {
+  // Whatever is on screen, it says how its eighths are meant to be read.
+  list.each(session.all_views(), fn(view) {
+    let swung = showing(view)
+    assert string.contains(abc_of(swung), "\"Swing\"")
+
+    let straight = session.update(swung, session.SwingIt(False))
+    assert !string.contains(abc_of(straight), "Swing")
+  })
+}
+
+pub fn a_backed_line_is_a_band_test() {
+  // Piano, bass, and the part to play over them, each with its own sound.
+  let music = abc_of(showing(session.LineView))
+  assert string.contains(music, "V:1 clef=treble name=\"Piano\"")
+  assert string.contains(music, "V:2 clef=bass name=\"Bass\"")
+  assert string.contains(music, "%%MIDI program 32")
+}

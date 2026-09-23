@@ -81,7 +81,7 @@ function responsive(target) {
 // inside the SVG lands exactly where the notes are, and scales with them for
 // free because it lives in the same coordinate space.
 
-function raise(tune) {
+function raise(tune, swing) {
   const svg = document.querySelector(".notation svg");
   if (!svg) return false;
 
@@ -90,6 +90,7 @@ function raise(tune) {
     (one) => typeof one.left === "number" && typeof one.top === "number",
   );
   if (timings.length === 0) return false;
+  if (swing) swingSight(timings, eighth(tune));
 
   playhead = document.createElementNS(SVG_NS, "rect");
   playhead.setAttribute("class", "playhead");
@@ -153,9 +154,6 @@ function lower() {
   clock = null;
 }
 
-// The horn is the second staff; the backing is written above it.
-const HORN = 1;
-
 /// Take a voice out of what the synth is about to play.
 function mute(synth, voice) {
   const tracks = synth.flattened && synth.flattened.tracks;
@@ -163,9 +161,54 @@ function mute(synth, voice) {
   tracks.splice(voice, 1);
 }
 
+// Swing is a playing instruction, not a rhythm to write down: the chart says
+// straight eighths and "Swing" at the top, and the off-beats arrive a third
+// of an eighth late. Writing the triplets out instead would be correct and
+// unreadable, which is why no jazz chart does it.
+const SWING = 1 / 3;
+
+/// Whether a position, counted in eighths, falls between the beats.
+function offbeat(eighths) {
+  const nearest = Math.round(eighths);
+  return Math.abs(eighths - nearest) < 1e-6 && nearest % 2 === 1;
+}
+
+/// The sound: hold each off-beat back, ending it where it would have ended
+/// so nothing spills into the note after it.
+function swingSound(flattened) {
+  const eighth = 0.125;
+  const late = eighth * SWING;
+  for (const track of flattened.tracks || []) {
+    for (const event of track) {
+      if (event.cmd !== "note" || !offbeat(event.start / eighth)) continue;
+      event.start += late;
+      event.duration = Math.max(event.duration - late, eighth / 4);
+    }
+  }
+}
+
+/// And the playhead, by exactly the same amount, so it still sits on the note
+/// being heard rather than on the one the page says is due.
+function swingSight(list, perEighth) {
+  for (const one of list) {
+    if (offbeat(one.milliseconds / perEighth)) {
+      one.milliseconds += perEighth * SWING;
+    }
+  }
+}
+
+/// How long an eighth lasts, taken from the engraving rather than assumed, so
+/// the tempo on the chart is the one the playhead counts in.
+function eighth(tune) {
+  const meter = tune.getMeter && tune.getMeter();
+  const value = meter && meter.value && meter.value[0];
+  const per = value ? (Number(value.num) * 8) / Number(value.den) : 8;
+  return tune.millisecondsPerMeasure() / (per || 8);
+}
+
 // --- Sound -------------------------------------------------------------------
 
-export function play(abc, quietHorn, onEnded) {
+export function play(abc, quietHorn, swing, onEnded) {
   const abcjs = library();
   if (!abcjs || !abcjs.synth.supportsAudio()) {
     onEnded();
@@ -201,7 +244,10 @@ export function play(abc, quietHorn, onEnded) {
       // voice and never looks at that option. The tracks are still sitting
       // on the synth untouched, though, so dropping the horn's before the
       // notes are loaded is the same edit one step later.
-      if (quietHorn && staves(drawn.tunes[0]) > 1) mute(synth, HORN);
+      // The horn is the last staff, whatever else the band has grown to.
+      const parts = staves(drawn.tunes[0]);
+      if (quietHorn && parts > 1) mute(synth, parts - 1);
+      if (swing) swingSound(synth.flattened);
       return synth.prime();
     })
     .then((response) => {
@@ -211,7 +257,7 @@ export function play(abc, quietHorn, onEnded) {
 
       // The audio clock rather than a timer of our own, so the playhead
       // cannot drift away from what is being heard.
-      if (raise(drawn.tunes[0])) {
+      if (raise(drawn.tunes[0], swing)) {
         clock = context;
         startedAt = context.currentTime;
         frame = requestAnimationFrame(follow);

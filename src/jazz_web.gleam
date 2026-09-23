@@ -57,7 +57,7 @@ fn update(model: Model, message: Msg) -> #(Model, Effect(Msg)) {
       case session.panel(model.session) {
         session.Panel(_, abc) -> #(
           Model(..model, playing: True),
-          sound(abc, !model.session.horn_sounds),
+          sound(abc, !model.session.horn_sounds, model.session.swing),
         )
         session.Problem(_) -> #(model, effect.none())
       }
@@ -66,8 +66,10 @@ fn update(model: Model, message: Msg) -> #(Model, Effect(Msg)) {
   }
 }
 
-fn sound(abc: String, quiet_horn: Bool) -> Effect(Msg) {
-  effect.from(fn(dispatch) { play(abc, quiet_horn, fn() { dispatch(Ended) }) })
+fn sound(abc: String, quiet_horn: Bool, swing: Bool) -> Effect(Msg) {
+  effect.from(fn(dispatch) {
+    play(abc, quiet_horn, swing, fn() { dispatch(Ended) })
+  })
 }
 
 fn silence() -> Effect(Msg) {
@@ -388,6 +390,7 @@ fn stage(model: Model) -> Element(Msg) {
             render_notation(abc),
           ),
           html.div([attribute.class("controls-corner")], [
+            swing_switch(model),
             horn_switch(model),
             play_button(model),
           ]),
@@ -395,6 +398,27 @@ fn stage(model: Model) -> Element(Msg) {
         html.pre([attribute.class("readout")], [html.text(readout)]),
       ])
   }
+}
+
+/// Swing is the default because this is a jazz tool, but a scale practised
+/// long-short is a different exercise from one practised straight, so it is
+/// a switch rather than a decision.
+fn swing_switch(model: Model) -> Element(Msg) {
+  html.button(
+    [
+      attribute.class(case model.session.swing {
+        True -> "toggle on"
+        False -> "toggle"
+      }),
+      event.on_click(Did(session.SwingIt(!model.session.swing))),
+    ],
+    [
+      html.text(case model.session.swing {
+        True -> "Swing"
+        False -> "Straight"
+      }),
+    ],
+  )
 }
 
 /// Only worth offering where there is a backing to play against.
@@ -446,9 +470,14 @@ fn render_notation(abc: String) -> String {
 }
 
 @external(javascript, "./jazz_web_ffi.mjs", "play")
-fn play(abc: String, quiet_horn: Bool, on_ended: fn() -> Nil) -> Nil {
-  case abc, quiet_horn {
-    _, _ -> on_ended()
+fn play(
+  abc: String,
+  quiet_horn: Bool,
+  swing: Bool,
+  on_ended: fn() -> Nil,
+) -> Nil {
+  case abc, quiet_horn, swing {
+    _, _, _ -> on_ended()
   }
 }
 

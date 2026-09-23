@@ -293,8 +293,8 @@ pub fn a_score_says_how_fast_it_goes_test() {
   })
 }
 
-pub fn a_backed_line_has_two_staves_test() {
-  // The piano on top at concert pitch, the part to play underneath. Each
+pub fn a_backed_line_has_a_rhythm_section_test() {
+  // Piano and bass at concert pitch, the part to play underneath them. Each
   // staff keeps its own key, because a horn does not read in the same one.
   let assert Ok(alto) = instrument.find("alto")
   let assert Ok(built) = progression.build("ii-V-I", PitchClass(C, 0))
@@ -308,14 +308,22 @@ pub fn a_backed_line_has_two_staves_test() {
       notation.default_tempo,
     )
 
-  let assert [piano, horn] = score.parts
-  assert piano.clef == notation.Bass
+  let assert [piano, bass, horn] = score.parts
+  assert piano.clef == notation.Treble
+  assert bass.clef == notation.Bass
   assert horn.clef == notation.Treble
+  // The rhythm section reads in the key of the tune; the horn in its own.
   assert piano.signature == 0
+  assert bass.signature == 0
   assert horn.signature == 3
+  // Each player gets their own voice, and their own sound.
+  assert piano.sound == instrument.piano
+  assert bass.sound == instrument.bass
+  assert horn.sound == instrument.sound(alto)
   assert list.length(piano.measures) == list.length(horn.measures)
+  assert list.length(bass.measures) == list.length(horn.measures)
 
-  // Both staves run the same length, whatever is written on them.
+  // Every staff runs the same length, whatever is written on it.
   let fill = fn(part: notation.Part) {
     list.map(part.measures, fn(measure) {
       list.fold(measure.events, 0, fn(sum, event) {
@@ -324,13 +332,25 @@ pub fn a_backed_line_has_two_staves_test() {
     })
   }
   assert fill(piano) == fill(horn)
+  assert fill(bass) == fill(horn)
 
   let written = abc.render(score)
-  assert string.contains(written, "V:1 clef=bass")
-  assert string.contains(written, "V:2 clef=treble")
-  // The second staff has to say its clef again while announcing its key, or
-  // the key change resets it to the one in the header.
+  assert string.contains(written, "V:1 clef=treble")
+  assert string.contains(written, "V:2 clef=bass")
+  assert string.contains(written, "V:3 clef=treble")
+  // A staff that is not the first has to say its clef again while announcing
+  // its key, or the key change resets it to the one in the header.
+  assert string.contains(written, "[K:C clef=bass]")
   assert string.contains(written, "[K:A clef=treble]")
+}
+
+pub fn a_feel_is_written_beside_the_tempo_test() {
+  // A chart that swings without saying so leaves every reader to guess.
+  let plain = scale_score(PitchClass(C, 0), scale.Ionian)
+  assert string.contains(abc.render(plain), "Q:1/4=120\n")
+
+  let swung = notation.Score(..plain, feel: Some("Swing"))
+  assert string.contains(abc.render(swung), "Q:1/4=120 \"Swing\"")
 }
 
 pub fn a_single_staff_score_says_nothing_about_voices_test() {

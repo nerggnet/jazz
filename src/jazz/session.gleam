@@ -10,6 +10,7 @@
 //// on the same theory underneath.
 
 import gleam/int
+import gleam/option.{None, Some}
 import jazz/chord
 import jazz/instrument.{type Instrument}
 import jazz/internal/random
@@ -48,6 +49,9 @@ pub type Session {
     /// Whether the horn part is heard as well as seen. Turning it off leaves
     /// the backing to play against, which is the point of writing one out.
     horn_sounds: Bool,
+    /// Whether eighths are read long-short. On for jazz, which is nearly
+    /// always, and off for anything meant to be played straight.
+    swing: Bool,
     seed: Int,
     /// Kept apart from the line's seed so a tune can be kept while the line
     /// over it is rerolled, and the other way round.
@@ -75,6 +79,7 @@ pub type Action {
   ChooseBarsNamed(String)
   ChooseTempoNamed(String)
   PlayTheHorn(Bool)
+  SwingIt(Bool)
   NewLine
   NewTune
 }
@@ -97,6 +102,7 @@ pub fn new() -> Session {
     bars: 16,
     tempo: notation.default_tempo,
     horn_sounds: True,
+    swing: True,
     seed: 1,
     tune_seed: 1,
     view: ScaleView,
@@ -157,6 +163,7 @@ pub fn update(session: Session, action: Action) -> Session {
         _ -> session
       }
     PlayTheHorn(sounding) -> Session(..session, horn_sounds: sounding)
+    SwingIt(swung) -> Session(..session, swing: swung)
     ChooseTempoNamed(name) ->
       case int.parse(name) {
         Ok(beats) if beats >= 20 && beats <= 400 ->
@@ -227,13 +234,27 @@ fn heading(session: Session, built: Progression) -> String {
   }
 }
 
+/// Every score leaves here the same way, marked with the feel it is meant to
+/// be read in.
+fn engrave(session: Session, score: notation.Score) -> String {
+  abc.render(
+    notation.Score(..score, feel: case session.swing {
+      True -> Some("Swing")
+      False -> None
+    }),
+  )
+}
+
 pub fn panel(session: Session) -> Panel {
   case session.view {
     ScaleView -> {
       let subject = scale.Scale(session.key, session.kind)
       Panel(
         text.scale_view(subject, session.player),
-        abc.render(notation.from_scale(subject, session.player, session.tempo)),
+        engrave(
+          session,
+          notation.from_scale(subject, session.player, session.tempo),
+        ),
       )
     }
 
@@ -243,11 +264,10 @@ pub fn panel(session: Session) -> Panel {
         Ok(subject) ->
           Panel(
             text.chord_view(subject, session.player),
-            abc.render(notation.from_chord(
-              subject,
-              session.player,
-              session.tempo,
-            )),
+            engrave(
+              session,
+              notation.from_chord(subject, session.player, session.tempo),
+            ),
           )
       }
 
@@ -257,11 +277,10 @@ pub fn panel(session: Session) -> Panel {
         Ok(built) ->
           Panel(
             text.progression_view(built, session.player),
-            abc.render(notation.from_progression(
-              built,
-              session.player,
-              session.tempo,
-            )),
+            engrave(
+              session,
+              notation.from_progression(built, session.player, session.tempo),
+            ),
           )
       }
 
@@ -277,13 +296,16 @@ pub fn panel(session: Session) -> Panel {
               session.player,
               built.key,
             ),
-            abc.render(notation.from_line_with_backing(
-              line,
-              built,
-              heading(session, built),
-              session.player,
-              session.tempo,
-            )),
+            engrave(
+              session,
+              notation.from_line_with_backing(
+                line,
+                built,
+                heading(session, built),
+                session.player,
+                session.tempo,
+              ),
+            ),
           )
         }
       }
@@ -299,11 +321,10 @@ pub fn panel(session: Session) -> Panel {
               session.player,
               built.key,
             ),
-            abc.render(notation.from_progression(
-              built,
-              session.player,
-              session.tempo,
-            )),
+            engrave(
+              session,
+              notation.from_progression(built, session.player, session.tempo),
+            ),
           )
       }
   }

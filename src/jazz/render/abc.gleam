@@ -37,8 +37,15 @@ pub fn render_book(scores: List(Score)) -> String {
 }
 
 fn header(score: Score, number: Int) -> List(String) {
+  // The feel rides on the tempo line, which is where a chart carries it and
+  // where abcjs prints it: beside the metronome mark rather than buried in
+  // the music.
+  let feel = case score.feel {
+    Some(text) -> " \"" <> field(text) <> "\""
+    None -> ""
+  }
   let tempo = case score.tempo {
-    Some(beats) -> ["Q:1/4=" <> int.to_string(beats)]
+    Some(beats) -> ["Q:1/4=" <> int.to_string(beats) <> feel]
     None -> []
   }
   list.flatten([

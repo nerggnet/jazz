@@ -249,6 +249,9 @@ pub fn sound(instrument: Instrument) -> Int {
 /// The voice a written out backing is played with.
 pub const piano = 0
 
+/// An upright bass, for the walking line under the changes.
+pub const bass = 32
+
 /// A short label such as `Alto sax (Eb)`.
 pub fn label(instrument: Instrument) -> String {
   case is_concert(instrument) {
