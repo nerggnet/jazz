@@ -1,3 +1,4 @@
+import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/string
@@ -205,4 +206,63 @@ pub fn text_that_would_break_the_file_is_escaped_test() {
     "<work-title>Bill &amp; &quot;Ted&quot; &lt;live&gt;</work-title>",
   )
   assert !string.contains(written, "<live>")
+}
+
+pub fn a_part_says_what_is_playing_it_test() {
+  // "Bass" on a staff in a jazz score is a bassist. "Bass" as the name of a
+  // part in a file is the lowest voice in a choir, and a reader that has
+  // only the name to go on will pick the choir and play the walking line
+  // with it. The staff keeps its label; the instrument says what it is.
+  let assert Ok(changes) = progression.parse("| Dm7 G7 | Cmaj7 |")
+  let line = lick.over_progression(changes, lick.options(lick.Beginner, 1))
+  let written =
+    musicxml.render(notation.from_line_with_backing(
+      line,
+      changes,
+      "test",
+      alto(),
+      notation.default_tempo,
+    ))
+
+  assert string.contains(written, "<part-name>Bass</part-name>")
+  assert string.contains(
+    written,
+    "<instrument-name>Acoustic Bass</instrument-name>",
+  )
+  assert string.contains(
+    written,
+    "<instrument-sound>pluck.bass.acoustic</instrument-sound>",
+  )
+  assert string.contains(
+    written,
+    "<instrument-sound>keyboard.piano</instrument-sound>",
+  )
+  assert string.contains(
+    written,
+    "<instrument-sound>wind.reed.saxophone.alto</instrument-sound>",
+  )
+
+  // The staff labels are what they always were, so nothing on the page moves.
+  assert string.contains(written, "<part-name>Alto sax (Eb)</part-name>")
+}
+
+pub fn every_horn_is_named_and_sounded_test() {
+  // A part with nothing but a MIDI program number leaves the reader
+  // guessing, and it guesses by name.
+  list.each(instrument.all(), fn(player) {
+    let written =
+      musicxml.render(notation.from_scale(
+        scale.Scale(PitchClass(C, 0), scale.Ionian),
+        player,
+        notation.default_tempo,
+      ))
+    assert string.contains(written, "<instrument-sound>")
+    // Whatever it says it is, it asks for the matching General MIDI sound.
+    assert string.contains(
+      written,
+      "<midi-program>"
+        <> int.to_string(instrument.sound(player) + 1)
+        <> "</midi-program>",
+    )
+  })
 }

@@ -69,28 +69,82 @@ fn part_list(score: Score) -> List(String) {
     list.index_map(score.parts, fn(part, at) {
       let id = part_id(at)
       string.join(
-        [
-          "    <score-part id=\"" <> id <> "\">",
-          "      <part-name>" <> escape(part.name) <> "</part-name>",
-          "      <score-instrument id=\"" <> id <> "-I1\">",
-          "        <instrument-name>"
-            <> escape(part.name)
-            <> "</instrument-name>",
-          "      </score-instrument>",
-          "      <midi-instrument id=\"" <> id <> "-I1\">",
-          "        <midi-channel>" <> int.to_string(at + 1) <> "</midi-channel>",
-          // MusicXML numbers the General MIDI programs from one.
-          "        <midi-program>"
-            <> int.to_string(part.sound + 1)
-            <> "</midi-program>",
-          "      </midi-instrument>",
-          "    </score-part>",
-        ],
+        list.flatten([
+          [
+            "    <score-part id=\"" <> id <> "\">",
+            // What the staff is labelled.
+            "      <part-name>" <> escape(part.name) <> "</part-name>",
+            "      <score-instrument id=\"" <> id <> "-I1\">",
+            // And what is playing it, which is not the same question.
+            "        <instrument-name>"
+              <> escape(named(part))
+              <> "</instrument-name>",
+          ],
+          case sound_id(part.sound) {
+            Some(id) -> [
+              "        <instrument-sound>" <> id <> "</instrument-sound>",
+            ]
+            None -> []
+          },
+          [
+            "      </score-instrument>",
+            "      <midi-instrument id=\"" <> id <> "-I1\">",
+            "        <midi-channel>"
+              <> int.to_string(at + 1)
+              <> "</midi-channel>",
+            // MusicXML numbers the General MIDI programs from one.
+            "        <midi-program>"
+              <> int.to_string(part.sound + 1)
+              <> "</midi-program>",
+            "      </midi-instrument>",
+            "    </score-part>",
+          ],
+        ]),
         "\n",
       )
     }),
     ["  </part-list>"],
   ])
+}
+
+/// Which instrument a part is for, as opposed to what its staff is called.
+///
+/// A staff labelled "Bass" in a jazz score is a bassist. A part called
+/// "Bass" in a file is the lowest voice in a choir, which is what MuseScore
+/// reads it as, and it then plays the walking line with a choir. The name a
+/// reader identifies the instrument by and the name printed on the staff are
+/// different fields for exactly this reason, so they are allowed to differ.
+///
+/// Keyed on the General MIDI program, because that is the instrument: the
+/// part already carries it and there is nothing else to be got from.
+fn named(part: Part) -> String {
+  case voice(part.sound) {
+    Some(#(name, _)) -> name
+    None -> part.name
+  }
+}
+
+/// The Sound ID from MusicXML's own list, which is the field a reader is
+/// meant to work this out from rather than by guessing at names.
+fn sound_id(program: Int) -> Option(String) {
+  case voice(program) {
+    Some(#(_, id)) -> Some(id)
+    None -> None
+  }
+}
+
+fn voice(program: Int) -> Option(#(String, String)) {
+  case program {
+    0 -> Some(#("Piano", "keyboard.piano"))
+    32 -> Some(#("Acoustic Bass", "pluck.bass.acoustic"))
+    56 -> Some(#("Trumpet", "brass.trumpet"))
+    64 -> Some(#("Soprano Saxophone", "wind.reed.saxophone.soprano"))
+    65 -> Some(#("Alto Saxophone", "wind.reed.saxophone.alto"))
+    66 -> Some(#("Tenor Saxophone", "wind.reed.saxophone.tenor"))
+    67 -> Some(#("Baritone Saxophone", "wind.reed.saxophone.baritone"))
+    71 -> Some(#("Clarinet", "wind.reed.clarinet"))
+    _ -> None
+  }
 }
 
 fn part_id(at: Int) -> String {
