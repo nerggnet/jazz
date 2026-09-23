@@ -76,6 +76,8 @@ pub type Part {
   Part(
     name: String,
     clef: Clef,
+    /// The General MIDI voice this staff is played with.
+    sound: Int,
     /// The key signature, as a position on the line of fifths. Every staff
     /// has its own, because a horn does not read in the same key as the
     /// piano standing next to it.
@@ -121,7 +123,7 @@ pub fn events(score: Score) -> List(Event) {
 pub fn only_part(score: Score) -> Part {
   case score.parts {
     [one, ..] -> one
-    [] -> Part("", Treble, 0, [])
+    [] -> Part("", Treble, instrument.piano, 0, [])
   }
 }
 
@@ -155,6 +157,7 @@ pub fn from_scale(subject: Scale, player: Instrument, tempo: Int) -> Score {
     events: plain(hold_last(eighths(written(notes, shift, player))), []),
     hint: interval.transpose_class(subject.root, shift),
     tempo: tempo,
+    sound: instrument.sound(player),
   )
 }
 
@@ -177,6 +180,7 @@ pub fn from_chord(subject: Chord, player: Instrument, tempo: Int) -> Score {
     ]),
     hint: written_chord.root,
     tempo: tempo,
+    sound: instrument.sound(player),
   )
 }
 
@@ -195,6 +199,7 @@ pub fn from_line(
     events: line_events(lick.transpose(line, shift) |> lick.simplify_spelling),
     hint: interval.transpose_class(key, shift),
     tempo: tempo,
+    sound: instrument.sound(player),
   )
 }
 
@@ -229,12 +234,13 @@ pub fn from_line_with_backing(
     unit: 8,
     tempo: Some(tempo),
     parts: [
-      assemble(backing, changes.key, Bass, "Piano"),
+      assemble(backing, changes.key, Bass, "Piano", instrument.piano),
       assemble(
         line_events(moved),
         interval.transpose_class(changes.key, shift),
         Treble,
         instrument.label(player),
+        instrument.sound(player),
       ),
     ],
   )
@@ -291,6 +297,7 @@ pub fn from_progression(
       Part(
         name: instrument.label(player),
         clef: Treble,
+        sound: instrument.piano,
         signature: signature_near(moved.key),
         measures: measures,
       ),
@@ -370,6 +377,7 @@ fn build(
   events events: List(Event),
   hint hint: PitchClass,
   tempo tempo: Int,
+  sound sound: Int,
 ) -> Score {
   Score(
     title: title,
@@ -377,7 +385,7 @@ fn build(
     time: #(4, 4),
     unit: 8,
     tempo: Some(tempo),
-    parts: [assemble(events, hint, Treble, subtitle)],
+    parts: [assemble(events, hint, Treble, subtitle, sound)],
   )
 }
 
@@ -387,6 +395,7 @@ fn assemble(
   hint: PitchClass,
   clef: Clef,
   name: String,
+  sound: Int,
 ) -> Part {
   let capacity = 8
   let measures =
@@ -395,7 +404,7 @@ fn assemble(
     |> list.map(spell_silences)
     |> list.map(beam_measure(_, capacity))
   let signature = choose_signature(measures, hint)
-  Part(name, clef, signature, apply_accidentals(measures, signature))
+  Part(name, clef, sound, signature, apply_accidentals(measures, signature))
 }
 
 /// Fill bars by duration rather than by count, so a held note takes the room

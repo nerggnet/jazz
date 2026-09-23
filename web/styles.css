@@ -246,10 +246,38 @@ button.primary:hover {
   opacity: 0.4;
 }
 
-.play {
+.controls-corner {
   position: absolute;
   top: 12px;
   right: 14px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.toggle {
+  appearance: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--quiet);
+  background: var(--ground);
+  border: 1px solid var(--edge);
+  border-radius: 999px;
+  padding: 5px 13px;
+  cursor: pointer;
+}
+
+.toggle:hover {
+  color: var(--ink);
+  border-color: var(--accent);
+}
+
+.toggle.on {
+  color: var(--ink);
+  border-color: var(--quiet);
+}
+
+.play {
   appearance: none;
   font: inherit;
   font-size: 13px;

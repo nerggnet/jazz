@@ -204,6 +204,30 @@ pub fn the_tempo_can_be_changed_test() {
   assert session.update(subject, session.ChooseTempoNamed("presto")) == subject
 }
 
+pub fn the_horn_can_be_silenced_test() {
+  // Turning the horn off leaves the written backing to play against, which
+  // is the whole reason for writing one out.
+  let subject = session.new()
+  assert subject.horn_sounds
+  let quiet = session.update(subject, session.PlayTheHorn(False))
+  assert !quiet.horn_sounds
+  // It changes nothing about what is on the page, only what is heard.
+  assert text_of(quiet) == text_of(subject)
+  assert session.update(quiet, session.PlayTheHorn(True)) == subject
+}
+
+pub fn a_part_plays_back_as_its_own_horn_test() {
+  // A tenor part should sound like a tenor, not like a piano.
+  let alto = showing(session.LineView)
+  let assert session.Panel(_, on_alto) = session.panel(alto)
+  assert string.contains(on_alto, "%%MIDI program 65")
+  let assert session.Panel(_, on_tenor) =
+    session.panel(session.update(alto, session.ChooseInstrument("tenor")))
+  assert string.contains(on_tenor, "%%MIDI program 66")
+  // And the staff written for the piano sounds like one.
+  assert string.contains(on_alto, "%%MIDI program 0")
+}
+
 pub fn views_declare_what_they_need_test() {
   assert session.uses_key(showing(session.ScaleView))
   assert !session.uses_key(showing(session.ChordView))

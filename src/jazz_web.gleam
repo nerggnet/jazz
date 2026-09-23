@@ -384,10 +384,36 @@ fn stage(model: Model) -> Element(Msg) {
             [attribute.class("notation")],
             render_notation(abc),
           ),
-          play_button(model),
+          html.div([attribute.class("controls-corner")], [
+            horn_switch(model),
+            play_button(model),
+          ]),
         ]),
         html.pre([attribute.class("readout")], [html.text(readout)]),
       ])
+  }
+}
+
+/// Only worth offering where there is a backing to play against.
+fn horn_switch(model: Model) -> Element(Msg) {
+  case model.session.view {
+    session.LineView ->
+      html.button(
+        [
+          attribute.class(case model.session.horn_sounds {
+            True -> "toggle on"
+            False -> "toggle"
+          }),
+          event.on_click(Did(session.PlayTheHorn(!model.session.horn_sounds))),
+        ],
+        [
+          html.text(case model.session.horn_sounds {
+            True -> "Horn on"
+            False -> "Horn off"
+          }),
+        ],
+      )
+    _ -> element.none()
   }
 }
 

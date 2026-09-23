@@ -13,10 +13,9 @@ import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/string
-import jazz/internal/num
 import jazz/notation.{
-  type Clef, type Event, type Measure, type Score, Bass, ContinueBeam, Note,
-  Rest, Spacer, Stack, StartBeam, Treble,
+  type Clef, type Event, type Measure, type Part, type Score, Bass, ContinueBeam,
+  Note, Rest, Spacer, Stack, StartBeam, Treble,
 }
 import jazz/pitch.{type Pitch}
 
@@ -96,55 +95,62 @@ fn clef_name(clef: Clef) -> String {
 }
 
 fn body(score: Score) -> List(String) {
-  let single = case score.parts {
-    [_] -> True
-    _ -> False
+  case score.parts {
+    // A single staff tune stays exactly as plain as it always was.
+    [only] -> staff_lines(only, True)
+    parts -> list.flat_map(parts, fn(part) { voice_block(part, parts) })
   }
-  let systems =
-    list.map(score.parts, fn(part) {
-      chunk(list.map(part.measures, measure), bars_per_line)
-    })
-  let total =
-    list.fold(systems, 0, fn(most, one) { int.max(most, list.length(one)) })
+}
 
-  num.counting(total)
-  |> list.flat_map(fn(at) {
-    let last = at == total - 1
-    list.index_map(score.parts, fn(part, voice) {
-      let bars = case list.drop(nth(systems, voice), at) {
-        [line, ..] -> line
-        [] -> []
-      }
-      let opening = case single, at, voice {
-        True, _, _ -> ""
-        // Each staff after the first announces its own key, and has to say
-        // its clef again while doing so or the key change resets it.
-        False, 0, 0 -> "[V:1] "
-        False, 0, _ ->
-          "[V:"
-          <> voice_id(voice)
-          <> "][K:"
-          <> key_name(part.signature)
-          <> " clef="
-          <> clef_name(part.clef)
-          <> "] "
-        False, _, _ -> "[V:" <> voice_id(voice) <> "] "
-      }
-      opening
-      <> string.join(bars, " | ")
-      <> case last {
-        True -> " |]"
-        False -> " |"
-      }
-    })
+/// A voice, its sound, and then all of its music. Grouping a voice's lines
+/// together rather than interleaving them is what lets a `%%MIDI program`
+/// attach to the voice it follows rather than to the tune as a whole.
+fn voice_block(part: Part, parts: List(Part)) -> List(String) {
+  let at = index_of(parts, part)
+  list.flatten([
+    ["V:" <> voice_id(at), "%%MIDI program " <> int.to_string(part.sound)],
+    staff_lines(part, at == 0),
+  ])
+}
+
+/// The music of one staff, four bars to a line. A staff that is not the first
+/// announces its own key, and has to repeat its clef while doing so or the
+/// key change resets it to the one in the header.
+fn staff_lines(part: Part, leading: Bool) -> List(String) {
+  let opening = case leading {
+    True -> ""
+    False ->
+      "[K:"
+      <> key_name(part.signature)
+      <> " clef="
+      <> clef_name(part.clef)
+      <> "] "
+  }
+  let systems = chunk(list.map(part.measures, measure), bars_per_line)
+  let last = list.length(systems) - 1
+  list.index_map(systems, fn(line, at) {
+    case at {
+      0 -> opening
+      _ -> ""
+    }
+    <> string.join(line, " | ")
+    <> case at == last {
+      True -> " |]"
+      False -> " |"
+    }
   })
 }
 
-fn nth(systems: List(List(List(String))), at: Int) -> List(List(String)) {
-  case list.drop(systems, at) {
-    [one, ..] -> one
-    [] -> []
-  }
+fn index_of(parts: List(Part), wanted: Part) -> Int {
+  let #(found, _) =
+    list.fold(parts, #(0, 0), fn(state, one) {
+      let #(found, at) = state
+      case one == wanted {
+        True -> #(at, at + 1)
+        False -> #(found, at + 1)
+      }
+    })
+  found
 }
 
 fn measure(subject: Measure) -> String {

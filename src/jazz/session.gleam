@@ -45,6 +45,9 @@ pub type Session {
     bars: Int,
     /// Quarter notes a minute, for whatever is played or printed.
     tempo: Int,
+    /// Whether the horn part is heard as well as seen. Turning it off leaves
+    /// the backing to play against, which is the point of writing one out.
+    horn_sounds: Bool,
     seed: Int,
     /// Kept apart from the line's seed so a tune can be kept while the line
     /// over it is rerolled, and the other way round.
@@ -71,6 +74,7 @@ pub type Action {
   ChooseView(View)
   ChooseBarsNamed(String)
   ChooseTempoNamed(String)
+  PlayTheHorn(Bool)
   NewLine
   NewTune
 }
@@ -92,6 +96,7 @@ pub fn new() -> Session {
     level: lick.Beginner,
     bars: 16,
     tempo: notation.default_tempo,
+    horn_sounds: True,
     seed: 1,
     tune_seed: 1,
     view: ScaleView,
@@ -151,6 +156,7 @@ pub fn update(session: Session, action: Action) -> Session {
         Ok(bars) if bars > 0 -> Session(..session, bars: bars)
         _ -> session
       }
+    PlayTheHorn(sounding) -> Session(..session, horn_sounds: sounding)
     ChooseTempoNamed(name) ->
       case int.parse(name) {
         Ok(beats) if beats >= 20 && beats <= 400 ->

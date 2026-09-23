@@ -150,6 +150,11 @@ on one score. Shell voicings — the root, and above it the third and the sevent
 pianist does without thinking about it. On the command line `--backing` does
 the same.
 
+Each staff plays back as the thing it was written for: the backing as a piano,
+the part as whichever horn is selected. And **Horn on** turns the written line
+off in the playback while leaving it on the page, so the backing can be played
+against rather than listened to.
+
 `--level` decides how much vocabulary is in play and how much room it leaves:
 beginners get plain arpeggios and scale runs into their targets, and come in on
 the beat with half a bar of silence at the end of every phrase; advanced lines

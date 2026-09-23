@@ -230,6 +230,25 @@ fn fit_loop(written: Pitch, low: Int, high: Int, tries: Int) -> Pitch {
   }
 }
 
+/// The General MIDI voice that sounds most like this instrument, so a part
+/// plays back as the thing it was written for rather than as a piano.
+pub fn sound(instrument: Instrument) -> Int {
+  case instrument.id {
+    "soprano" -> 64
+    "alto" | "eb" -> 65
+    "tenor" -> 66
+    "baritone" -> 67
+    "trumpet" -> 56
+    "clarinet" -> 71
+    // Concert pitch covers anything, so it gets the instrument everything
+    // else is measured against.
+    _ -> 0
+  }
+}
+
+/// The voice a written out backing is played with.
+pub const piano = 0
+
 /// A short label such as `Alto sax (Eb)`.
 pub fn label(instrument: Instrument) -> String {
   case is_concert(instrument) {
