@@ -245,6 +245,35 @@ pub fn changes(session: Session) -> Result(Progression, String) {
   }
 }
 
+/// Every sound the app can ask for with this horn selected, as
+/// "program:low-high" a piece in MIDI numbers.
+///
+/// The horn's own range is the one it can be written in. The rhythm section's
+/// are the ones it is written in here. The piano's is wider than anything
+/// written for it because abcjs voices chord symbols by itself, putting the
+/// bass note wherever the key falls, and round the keys that reaches from the
+/// bottom of the stave to well above it.
+pub fn sounds(session: Session) -> String {
+  [
+    #(
+      instrument.sound(session.player),
+      pitch.to_midi(session.player.lowest_written),
+      pitch.to_midi(session.player.highest_written),
+    ),
+    #(instrument.piano, 27, 89),
+    #(instrument.bass, 33, 60),
+  ]
+  |> list.map(fn(one) {
+    let #(program, low, high) = one
+    int.to_string(program)
+    <> ":"
+    <> int.to_string(low)
+    <> "-"
+    <> int.to_string(high)
+  })
+  |> string.join(",")
+}
+
 /// Seeds are whole and positive, and a generator given nothing to work with
 /// returns the same thing every time.
 fn seed_from(text: String) -> Result(Int, Nil) {

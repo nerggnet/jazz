@@ -67,6 +67,62 @@ export function renderNotation(abc) {
 
 let warmed = null;
 let warming = null;
+let prefetched = null;
+
+/// Everything the app can ever ask for, fetched once in the background.
+///
+/// Warming the music on screen helps the view you are looking at and nothing
+/// else, and the worst case is a study in twelve keys: abcjs voices the chord
+/// symbols itself, its bass notes land wherever each key puts them, and the
+/// piano alone ends up spanning five octaves. Sixty three files at a couple
+/// of hundred milliseconds each is the wait.
+///
+/// None of it is unknowable, though. The ranges are the horn's and the ones
+/// the rhythm section is written in, so they can all be asked for up front
+/// and then nothing ever waits again. `spec` is "program:low-high" a piece,
+/// in MIDI numbers.
+export function prefetch(spec) {
+  const abcjs = library();
+  if (!abcjs || !abcjs.synth.supportsAudio() || spec === prefetched) {
+    return undefined;
+  }
+  prefetched = spec;
+
+  // After the music on screen, which somebody may be about to play.
+  setTimeout(() => {
+    const tracks = spec.split(",").map((part) => {
+      const [program, range] = part.split(":");
+      const instrument = Number(program);
+      const [low, high] = range.split("-").map(Number);
+      const track = [{ cmd: "program", channel: 0, instrument }];
+      for (let pitch = low; pitch <= high; pitch += 1) {
+        track.push({
+          cmd: "note",
+          pitch,
+          volume: 96,
+          start: 0,
+          duration: 0.125,
+          instrument,
+          gap: 0,
+        });
+      }
+      return track;
+    });
+    try {
+      warming = warming || new (window.AudioContext || window.webkitAudioContext)();
+      // Never primed and never started: this is only here to fill the cache.
+      new abcjs.synth.CreateSynth()
+        .init({
+          audioContext: warming,
+          sequence: { tempo: 120, instrument: 0, tracks, totalDuration: 1 },
+        })
+        .catch(() => {});
+    } catch (error) {
+      // Nothing to be done, and nothing that was working stops working.
+    }
+  }, 2500);
+  return undefined;
+}
 
 export function warm(abc) {
   const abcjs = library();

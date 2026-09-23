@@ -45,11 +45,14 @@ fn init(_arguments) -> #(Model, Effect(Msg)) {
   #(model, ready(model))
 }
 
-/// The sounds for whatever is on screen, fetched ahead of being asked for.
+/// The sounds for whatever is on screen, fetched ahead of being asked for,
+/// and then every other sound this horn could need.
 fn ready(model: Model) -> Effect(Msg) {
+  let everything =
+    effect.from(fn(_) { fetch_every_sound(session.sounds(model.session)) })
   case session.panel(model.session) {
-    session.Panel(_, abc) -> warm(abc)
-    session.Problem(_) -> effect.none()
+    session.Panel(_, abc) -> effect.batch([warm(abc), everything])
+    session.Problem(_) -> everything
   }
 }
 
@@ -675,6 +678,13 @@ fn play(
 @external(javascript, "./jazz_web_ffi.mjs", "warm")
 fn fetch_sounds(abc: String) -> Nil {
   case abc {
+    _ -> Nil
+  }
+}
+
+@external(javascript, "./jazz_web_ffi.mjs", "prefetch")
+fn fetch_every_sound(spec: String) -> Nil {
+  case spec {
     _ -> Nil
   }
 }

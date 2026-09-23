@@ -1,3 +1,4 @@
+import gleam/int
 import gleam/list
 import gleam/string
 import jazz/instrument
@@ -444,4 +445,26 @@ pub fn a_tune_has_a_seed_of_its_own_test() {
   assert moved.tune_seed == 42
   assert moved.seed == 7
   let assert session.Panel(_, _) = session.panel(moved)
+}
+
+pub fn the_sounds_a_horn_can_need_are_known_up_front_test() {
+  // Every sample the app can ask for, so they can be fetched before anybody
+  // presses Play rather than while they wait.
+  list.each(instrument.all(), fn(player) {
+    let one = session.update(session.new(), session.ChooseInstrument(player.id))
+    let spec = session.sounds(one)
+    // The horn it is written for, the piano and the bass.
+    assert list.length(string.split(spec, ",")) == 3
+    assert string.contains(spec, int.to_string(instrument.sound(player)) <> ":")
+    list.each(string.split(spec, ","), fn(part) {
+      let assert [program, range] = string.split(part, ":")
+      let assert [low, high] = string.split(range, "-")
+      let assert Ok(program) = int.parse(program)
+      let assert Ok(low) = int.parse(low)
+      let assert Ok(high) = int.parse(high)
+      assert program >= 0 && program <= 127
+      // A range that a soundfont has files for, and the right way round.
+      assert low >= 21 && high <= 108 && low < high
+    })
+  })
 }
