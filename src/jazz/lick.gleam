@@ -41,6 +41,20 @@ pub type Event {
   /// A tied note is held into the one after it rather than played again.
   Tone(pitch: Pitch, duration: Int, tied: Bool)
   Rest(duration: Int)
+  /// The three tones after this one are a triplet: each written as an
+  /// eighth, the three of them played in the time of two.
+  Triplet
+}
+
+/// How much room a run of events takes up, which for a triplet is less than
+/// the notes in it are written as.
+pub fn room(events: List(Event)) -> Int {
+  case events {
+    [] -> 0
+    [Triplet, ..rest] -> 2 + room(list.drop(rest, 3))
+    [Tone(_, length, _), ..rest] -> length + room(rest)
+    [Rest(length), ..rest] -> length + room(rest)
+  }
 }
 
 /// The stretch of line played over one chord, with a note on how it was made.
@@ -449,7 +463,7 @@ fn sound(
 
   // The approach notes are always eighths; what is left is the room the
   // figure itself has to fill, and the rhythm says how many notes that is.
-  let #(lengths, generator) =
+  let #(beats, generator) =
     rhythm(
       start,
       slots - approach_length(landing),
@@ -460,16 +474,14 @@ fn sound(
   let body =
     replay(
       figure.shape,
-      int.max(0, list.length(lengths) - 1),
+      int.max(0, notes_wanted(beats) - 1),
       tones,
       arpeggio,
       target,
     )
     |> mend(approach, rungs_of(figure.shape, tones, arpeggio), direction)
 
-  let melody =
-    list.zip([target, ..body], lengths)
-    |> list.map(fn(one) { Tone(one.0, one.1, False) })
+  let melody = lay(beats, [target, ..body], [])
   let arriving =
     list.map(approach, fn(one) { Tone(one, 1, landing == Anticipate) })
 
@@ -484,6 +496,10 @@ fn sound(
       events: events,
       target: label,
       device: describe(figure, landing)
+        <> case list.contains(beats, Three) {
+        True -> ", in triplets"
+        False -> ""
+      }
         <> case after > 0 {
         True -> ", then a breath"
         False -> ""
@@ -632,32 +648,107 @@ type Figure {
   Figure(shape: Shape, body: Int, repeated: Bool)
 }
 
-/// How long each note of a figure lasts, in eighths, summing to the room
-/// available.
+/// One move of a rhythm: a note of some length, or three in the time of two.
+type Beat {
+  Straight(length: Int)
+  Three
+}
+
+/// How the room available is divided up, in eighths.
 ///
 /// Mostly eighths, which is what the idiom is made of, with the occasional
-/// quarter for the line to lean on. A note longer than an eighth has to start
-/// on a beat or it cannot be written down without tying it to something.
+/// quarter for the line to lean on and, for a player who can hold them
+/// together, a triplet. A note longer than an eighth has to start on a beat
+/// or it cannot be written down without tying it to something, and a triplet
+/// has to fill a whole beat for the same reason.
 fn rhythm(
   from: Int,
   room: Int,
   level: Level,
   generator: Random,
-  acc: List(Int),
-) -> #(List(Int), Random) {
+  acc: List(Beat),
+) -> #(List(Beat), Random) {
   case room <= 0 {
     True -> #(list.reverse(acc), generator)
     False ->
       case room >= 2 && { from % 2 } == 0 {
-        False -> rhythm(from + 1, room - 1, level, generator, [1, ..acc])
+        False ->
+          rhythm(from + 1, room - 1, level, generator, [Straight(1), ..acc])
         True -> {
-          let #(hold, generator) = random.chance(generator, leaning(level))
-          case hold {
-            True -> rhythm(from + 2, room - 2, level, generator, [2, ..acc])
-            False -> rhythm(from + 1, room - 1, level, generator, [1, ..acc])
+          // A level that never plays triplets does not draw for them either,
+          // so its lines are the same lines they always were.
+          let #(three, generator) = case tripling(level) {
+            0 -> #(False, generator)
+            odds -> random.chance(generator, odds)
+          }
+          case three {
+            True -> rhythm(from + 2, room - 2, level, generator, [Three, ..acc])
+            False -> {
+              let #(hold, generator) = random.chance(generator, leaning(level))
+              case hold {
+                True ->
+                  rhythm(from + 2, room - 2, level, generator, [
+                    Straight(2),
+                    ..acc
+                  ])
+                False ->
+                  rhythm(from + 1, room - 1, level, generator, [
+                    Straight(1),
+                    ..acc
+                  ])
+              }
+            }
           }
         }
       }
+  }
+}
+
+/// How many notes a rhythm asks for.
+fn notes_wanted(beats: List(Beat)) -> Int {
+  list.fold(beats, 0, fn(total, one) {
+    case one {
+      Three -> total + 3
+      Straight(_) -> total + 1
+    }
+  })
+}
+
+/// Pitches laid out on the rhythm, with a marker in front of every triplet.
+fn lay(
+  beats: List(Beat),
+  pitches: List(Pitch),
+  acc: List(Event),
+) -> List(Event) {
+  case beats, pitches {
+    [], _ -> list.reverse(acc)
+    _, [] -> list.reverse(acc)
+    [Straight(length), ..rest], [one, ..more] ->
+      lay(rest, more, [Tone(one, length, False), ..acc])
+    [Three, ..rest], [first, second, third, ..more] ->
+      lay(rest, more, [
+        Tone(third, 1, False),
+        Tone(second, 1, False),
+        Tone(first, 1, False),
+        Triplet,
+        ..acc
+      ])
+    // Not enough left to make three of: write what there is straight rather
+    // than leaving a triplet mark standing over the wrong number of notes.
+    [Three, ..rest], [one, ..more] ->
+      lay(rest, more, [Tone(one, 1, False), ..acc])
+  }
+}
+
+/// How readily a level reaches for a triplet.
+///
+/// Not at all to begin with: an even stream of eighths is hard enough, and
+/// three against two is the thing that makes a beginner's line fall apart.
+fn tripling(level: Level) -> Int {
+  case level {
+    Beginner -> 0
+    Intermediate -> 10
+    Advanced -> 18
   }
 }
 
@@ -796,9 +887,26 @@ fn replay(
 ) -> List(Pitch) {
   let rungs = rungs_of(shape, tones, arpeggio)
   let start = index_of(rungs, from)
-  shape.offsets
-  |> list.take(body)
+  // A figure is sized in eighths, and a triplet asks for three notes where
+  // two were expected, so a shape can be asked for more than it has. Running
+  // it round again is a sequence, which is a thing a player does; stopping
+  // short would leave the bar with a hole in it.
+  over_and_over(shape.offsets, body, [])
   |> list.map(fn(offset) { at(rungs, along(rungs, start, offset)) })
+}
+
+fn over_and_over(pattern: List(Int), wanted: Int, acc: List(Int)) -> List(Int) {
+  case pattern, wanted <= list.length(acc) {
+    [], _ -> list.reverse(acc)
+    _, True -> list.reverse(acc)
+    _, False ->
+      over_and_over(
+        pattern,
+        wanted,
+        list.fold(pattern, acc, fn(kept, one) { [one, ..kept] }),
+      )
+  }
+  |> list.take(wanted)
 }
 
 fn rungs_of(
@@ -1052,7 +1160,7 @@ pub fn pitches(line: Line) -> List(Pitch) {
   |> list.filter_map(fn(event) {
     case event {
       Tone(note, _, _) -> Ok(note)
-      Rest(_) -> Error(Nil)
+      _ -> Error(Nil)
     }
   })
 }
@@ -1061,12 +1169,7 @@ pub fn pitches(line: Line) -> List(Pitch) {
 pub fn duration(line: Line) -> Int {
   line.segments
   |> list.flat_map(fn(one) { one.events })
-  |> list.fold(0, fn(total, event) {
-    case event {
-      Tone(_, length, _) -> total + length
-      Rest(length) -> total + length
-    }
-  })
+  |> room
 }
 
 /// The lowest and highest note of the line.
@@ -1119,7 +1222,7 @@ pub fn simplify_spelling(line: Line) -> Line {
                   )
                 False -> Tone(note, length, held)
               }
-            Rest(length) -> Rest(length)
+            other -> other
           }
         }),
       )
@@ -1139,7 +1242,7 @@ pub fn transpose(line: Line, by: interval.Interval) -> Line {
           case event {
             Tone(note, length, held) ->
               Tone(interval.transpose(note, by), length, held)
-            Rest(length) -> Rest(length)
+            other -> other
           }
         }),
       )

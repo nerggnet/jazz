@@ -191,10 +191,38 @@ pub fn a_chart_has_one_bar_per_bar_test() {
     == 12
 }
 
+/// Notation has an eighth, a quarter, a dotted quarter and so on, and
+/// nothing in between.
+const writable = [1, 2, 3, 4, 6, 8]
+
+/// Walk a bar checking every length can be written and starts somewhere it
+/// can be read, counting a tuplet as the room it takes rather than as the
+/// notes it is written with.
+fn spelled(events: List(notation.Event), at: Int) -> Nil {
+  case events {
+    [] -> Nil
+    [notation.Tuplet(count, into, _, _), ..rest] -> {
+      // The notes inside are written at their plain value; the mark is what
+      // says they are played faster. Nothing in there starts on a beat and
+      // nothing in there needs to.
+      list.each(list.take(rest, count), fn(one) {
+        assert notation.duration_of(one) == 1
+      })
+      spelled(list.drop(rest, count), at + into)
+    }
+    [one, ..rest] -> {
+      let length = notation.duration_of(one)
+      assert list.contains(writable, length)
+      // Anything longer than an eighth has to start on a beat.
+      assert length == 1 || at % 2 == 0
+      spelled(rest, at + length)
+    }
+  }
+}
+
 pub fn every_duration_can_be_written_down_test() {
   // Notation has an eighth, a quarter, a dotted quarter and so on, and
   // nothing in between: five eighths is not a rest, it is two rests.
-  let writable = [1, 2, 3, 4, 6, 8]
   let assert Ok(changes) =
     progression.parse("|: Dm7 | G7 | Em7 | A7 | Dm7 | G7 | Cmaj7 | Cmaj7 :|")
   list.each([lick.Beginner, lick.Intermediate, lick.Advanced], fn(level) {
@@ -209,16 +237,9 @@ pub fn every_duration_can_be_written_down_test() {
           notation.default_tempo,
         )
       list.each(notation.only_part(score).measures, fn(measure) {
-        let #(_, total) =
-          list.fold(measure.events, #(0, 0), fn(state, event) {
-            let #(at, sum) = state
-            let length = notation.duration_of(event)
-            assert list.contains(writable, length)
-            // Anything longer than an eighth has to start on a beat.
-            assert length == 1 || at % 2 == 0
-            #(at + length, sum + length)
-          })
-        assert total <= notation.measure_capacity(score)
+        spelled(measure.events, 0)
+        assert notation.sounding(measure.events)
+          <= notation.measure_capacity(score)
       })
     })
   })
@@ -396,4 +417,75 @@ pub fn lines_carry_their_changes_test() {
       }
     })
   assert symbols == ["Dm7", "G7", "Cmaj7", "Cmaj7"]
+}
+
+pub fn a_triplet_survives_the_way_to_the_page_test() {
+  // Three notes over `(3`, the chord symbol in front of the mark rather
+  // than behind it, and the bar still adding up to eight eighths of room.
+  let assert Ok(changes) =
+    progression.parse("|: Dm7 | G7 | Em7 | A7 | Dm7 | G7 | Cmaj7 | Cmaj7 :|")
+  let line = lick.over_progression(changes, lick.options(lick.Advanced, 7))
+  let score =
+    notation.from_line(
+      line,
+      "test",
+      PitchClass(C, 0),
+      concert(),
+      notation.default_tempo,
+    )
+  let part = notation.only_part(score)
+
+  let marks =
+    list.flat_map(part.measures, fn(one) { one.events })
+    |> list.count(fn(event) {
+      case event {
+        notation.Tuplet(..) -> True
+        _ -> False
+      }
+    })
+  assert marks > 0
+
+  list.each(part.measures, fn(measure) {
+    // Written as nine eighths perhaps, but only eight of them are real.
+    assert notation.sounding(measure.events) == 8
+    spelled(measure.events, 0)
+  })
+
+  let written = abc.render(score)
+  assert string.contains(written, "(3")
+  // The mark counts notes, so nothing may sit between it and the first one.
+  assert !string.contains(written, "(3 ")
+}
+
+pub fn a_tuplet_and_its_notes_are_never_split_by_a_bar_line_test() {
+  // A mark at the end of one bar counting notes in the next is unreadable
+  // and unplayable, so a group that will not fit starts the next bar whole.
+  let assert Ok(changes) =
+    progression.parse("|: Dm7 | G7 | Em7 | A7 | Dm7 | G7 | Cmaj7 | Cmaj7 :|")
+  list.each([lick.Intermediate, lick.Advanced], fn(level) {
+    list.each([1, 2, 3, 5, 8, 13, 21, 34], fn(seed) {
+      let score =
+        notation.from_line(
+          lick.over_progression(changes, lick.options(level, seed)),
+          "test",
+          PitchClass(C, 0),
+          concert(),
+          notation.default_tempo,
+        )
+      list.each(notation.only_part(score).measures, fn(measure) {
+        whole_groups(measure.events)
+      })
+    })
+  })
+}
+
+fn whole_groups(events: List(notation.Event)) -> Nil {
+  case events {
+    [] -> Nil
+    [notation.Tuplet(count, _, _, _), ..rest] -> {
+      assert list.length(list.take(rest, count)) == count
+      whole_groups(list.drop(rest, count))
+    }
+    [_, ..rest] -> whole_groups(rest)
+  }
 }

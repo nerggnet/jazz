@@ -62,6 +62,20 @@ pub type Event {
   Rest(duration: Int, chord: Option(String), annotation: Option(String))
   /// Time that passes without a printed note, for chord charts.
   Spacer(duration: Int, chord: Option(String), annotation: Option(String))
+  /// The next `count` events are played in the time of `into` of them, so
+  /// three in the time of two is a triplet.
+  ///
+  /// A marker in the list rather than a box around the notes, because that
+  /// is what both notations are: ABC puts `(3` in front of the group and
+  /// MusicXML hangs a time modification on each note in it. A flat list is
+  /// also what every pass in this module already walks, and a tree would
+  /// have meant teaching all of them to recurse for the sake of one figure.
+  Tuplet(
+    count: Int,
+    into: Int,
+    chord: Option(String),
+    annotation: Option(String),
+  )
 }
 
 pub type Measure {
@@ -288,7 +302,7 @@ fn keyed(
 
 /// Round an exercise up to whole bars.
 fn bar_out(events: List(Event)) -> List(Event) {
-  let used = list.fold(events, 0, fn(sum, one) { sum + duration_of(one) })
+  let used = sounding(events)
   case int.modulo(used, 8) {
     Ok(0) | Error(_) -> events
     Ok(over) -> list.append(events, [Rest(8 - over, None, None)])
@@ -388,20 +402,29 @@ pub fn from_line_with_backing(
 
 fn line_events(moved: Line) -> List(Event) {
   list.flat_map(moved.segments, fn(segment) {
-    let symbol = chord.to_string(segment.chord)
-    list.index_map(segment.events, fn(event, at) {
-      // The chord symbol belongs to the bar it starts, not to every note.
-      let label = case at {
-        0 -> Some(symbol)
-        _ -> None
-      }
-      case event {
+    // The chord symbol belongs to the bar the segment starts, not to every
+    // note in it.
+    carrying(segment.events, Some(chord.to_string(segment.chord)), [])
+  })
+}
+
+fn carrying(
+  events: List(lick.Event),
+  label: Option(String),
+  acc: List(Event),
+) -> List(Event) {
+  case events {
+    [] -> list.reverse(acc)
+    [one, ..rest] -> {
+      let written = case one {
         lick.Tone(note, length, held) ->
           Note(note, length, None, label, None, Alone, held)
         lick.Rest(length) -> Rest(length, label, None)
+        lick.Triplet -> Tuplet(3, 2, label, None)
       }
-    })
-  })
+      carrying(rest, None, [written, ..acc])
+    }
+  }
 }
 
 /// A chord chart: bars carrying symbols and no printed notes.
@@ -590,7 +613,7 @@ fn settle(
 
 /// Fill bars by duration rather than by count, so a held note takes the room
 /// it deserves. Nothing is split across a bar line: an event that will not fit
-/// starts the next bar instead.
+/// starts the next bar instead, and a tuplet moves with its notes.
 fn into_measures(
   events: List(Event),
   capacity: Int,
@@ -598,14 +621,13 @@ fn into_measures(
   done: List(Measure),
 ) -> List(Measure) {
   let #(held, used) = current
-  case events {
-    [] ->
+  case step(events) {
+    #([], _, _) ->
       case held {
         [] -> list.reverse(done)
         _ -> list.reverse([Measure(list.reverse(held), None), ..done])
       }
-    [one, ..rest] -> {
-      let length = duration_of(one)
+    #(taken, length, rest) ->
       case held != [] && used + length > capacity {
         True ->
           into_measures(events, capacity, #([], 0), [
@@ -613,29 +635,78 @@ fn into_measures(
             ..done
           ])
         False ->
-          into_measures(rest, capacity, #([one, ..held], used + length), done)
+          into_measures(
+            rest,
+            capacity,
+            #(
+              list.fold(taken, held, fn(kept, one) { [one, ..kept] }),
+              used + length,
+            ),
+            done,
+          )
       }
-    }
   }
 }
 
+/// How long an event is written as, which inside a tuplet is not how long it
+/// lasts. Use `sounding` for anything that has to add up to a bar.
 pub fn duration_of(one: Event) -> Int {
   case one {
     Note(duration: length, ..) -> length
     Stack(duration: length, ..) -> length
     Rest(duration: length, ..) -> length
     Spacer(duration: length, ..) -> length
+    Tuplet(..) -> 0
+  }
+}
+
+/// How much room a run of events takes up.
+pub fn sounding(events: List(Event)) -> Int {
+  case step(events) {
+    #([], _, _) -> 0
+    #(_, length, rest) -> length + sounding(rest)
+  }
+}
+
+/// Events taken one move at a time: usually a single event, but a tuplet and
+/// the notes it governs move together. Nothing may come between them and a
+/// bar line may not fall inside them, so nothing here may take them apart.
+fn step(events: List(Event)) -> #(List(Event), Int, List(Event)) {
+  case events {
+    [] -> #([], 0, [])
+    [Tuplet(count, into, _, _) as marker, ..rest] -> #(
+      [marker, ..list.take(rest, count)],
+      into,
+      list.drop(rest, count),
+    )
+    [one, ..rest] -> #([one], duration_of(one), rest)
   }
 }
 
 /// Each event paired with the unit it starts on inside its bar.
+///
+/// Everything in a tuplet is given the position of the group, which keeps the
+/// arithmetic in whole units -- a triplet eighth starts two thirds of the way
+/// through one and there is no room for that here -- and has the side effect
+/// of beaming the group together, which is what it wants anyway.
 fn with_positions(events: List(Event)) -> List(#(Int, Event)) {
-  let #(found, _) =
-    list.fold(events, #([], 0), fn(state, one) {
-      let #(done, at) = state
-      #([#(at, one), ..done], at + duration_of(one))
-    })
-  list.reverse(found)
+  positions(events, 0, [])
+}
+
+fn positions(
+  events: List(Event),
+  at: Int,
+  acc: List(#(Int, Event)),
+) -> List(#(Int, Event)) {
+  case step(events) {
+    #([], _, _) -> list.reverse(acc)
+    #(taken, length, rest) ->
+      positions(
+        rest,
+        at + length,
+        list.fold(taken, acc, fn(kept, one) { [#(at, one), ..kept] }),
+      )
+  }
 }
 
 /// Rewrite silences as durations that can actually be written down.
@@ -706,11 +777,7 @@ fn longest_fitting(sizes: List(Int), length: Int) -> Int {
 
 /// Beam eighth notes in half bar groups, which is how a bebop line is written.
 fn beam_measure(subject: Measure, capacity: Int) -> Measure {
-  let group_size = capacity / 2
-  let groups =
-    subject.events
-    |> with_positions
-    |> list.map(fn(entry) { #(entry.0 / group_size, entry.1) })
+  let groups = grouping(subject.events, capacity / 2, 0, 0, [])
   Measure(
     ..subject,
     events: list.index_map(groups, fn(entry, at) {
@@ -731,6 +798,39 @@ fn beam_measure(subject: Measure, capacity: Int) -> Measure {
       }
     }),
   )
+}
+
+/// Which beam each event belongs under: half a bar at a time, except that
+/// the notes of a tuplet beam with each other and nothing else, so the
+/// bracket over them reads as the one figure it is.
+fn grouping(
+  events: List(Event),
+  group_size: Int,
+  at: Int,
+  tag: Int,
+  acc: List(#(Int, Event)),
+) -> List(#(Int, Event)) {
+  case events {
+    [] -> list.reverse(acc)
+    [Tuplet(count, into, _, _) as marker, ..rest] -> {
+      // Negative, so a tuplet's beam can never be the same as a bar's.
+      let own = -1 - tag
+      grouping(
+        list.drop(rest, count),
+        group_size,
+        at + into,
+        tag + 1,
+        list.fold([marker, ..list.take(rest, count)], acc, fn(kept, one) {
+          [#(own, one), ..kept]
+        }),
+      )
+    }
+    [one, ..rest] ->
+      grouping(rest, group_size, at + duration_of(one), tag, [
+        #(at / group_size, one),
+        ..acc
+      ])
+  }
 }
 
 fn joins(groups: List(#(Int, Event)), at: Int, group: Int) -> Bool {

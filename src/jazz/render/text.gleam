@@ -419,6 +419,46 @@ pub fn lick_view(
 }
 
 /// One row per chord, carrying the bar it starts in.
+/// One four character cell to an eighth note, so the bars line up down the
+/// page whatever is played in them.
+fn cells(events: List(lick.Event)) -> String {
+  case events {
+    [] -> ""
+    // Three notes in the room of two, so the three names share two cells.
+    // Squeezed, which is what a triplet does to a bar.
+    [lick.Triplet, ..rest] -> {
+      let names =
+        list.take(rest, 3)
+        |> list.map(fn(one) {
+          case one {
+            lick.Tone(note, _, _) -> pitch.class_to_string(note.class)
+            _ -> "-"
+          }
+        })
+        |> list.map(string.pad_end(_, 2, " "))
+        |> string.join(" ")
+      string.pad_end(names, 8, " ") <> cells(list.drop(rest, 3))
+    }
+    // A note spans its own cell plus one for each extra eighth it is held,
+    // and a tie says the next one is the same note again.
+    [lick.Tone(note, beats, held), ..rest] ->
+      string.pad_end(
+        pitch.class_to_string(note.class)
+          <> case held {
+          True -> "~"
+          False -> ""
+        },
+        4,
+        " ",
+      )
+      <> string.repeat(string.pad_end(".", 4, " "), beats - 1)
+      <> cells(rest)
+    // One dash an eighth, so the columns still line up through a rest.
+    [lick.Rest(beats), ..rest] ->
+      string.repeat(string.pad_end("-", 4, " "), beats) <> cells(rest)
+  }
+}
+
 fn lick_rows(
   segments: List(Segment),
   elapsed: Int,
@@ -427,37 +467,8 @@ fn lick_rows(
   case segments {
     [] -> list.reverse(acc)
     [one, ..rest] -> {
-      let length =
-        list.fold(one.events, 0, fn(total, event) {
-          case event {
-            lick.Tone(_, beats, _) -> total + beats
-            lick.Rest(beats) -> total + beats
-          }
-        })
-      let names =
-        one.events
-        |> list.map(fn(event) {
-          case event {
-            // A note spans its own cell plus one for each extra eighth it
-            // is held, and a tie says the next one is the same note again.
-            lick.Tone(note, beats, held) ->
-              string.pad_end(
-                pitch.class_to_string(note.class)
-                  <> case held {
-                  True -> "~"
-                  False -> ""
-                },
-                4,
-                " ",
-              )
-              <> string.repeat(string.pad_end(".", 4, " "), beats - 1)
-            // One dash an eighth, so the columns still line up through a rest.
-            lick.Rest(beats) ->
-              string.repeat(string.pad_end("-", 4, " "), beats)
-          }
-        })
-        |> string.concat
-        |> string.trim_end
+      let length = lick.room(one.events)
+      let names = cells(one.events) |> string.trim_end
       let row = #(
         int.to_string(elapsed / lick.bar + 1),
         chord.to_string(one.chord),

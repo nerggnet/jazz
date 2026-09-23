@@ -15,7 +15,7 @@ import gleam/option.{None, Some}
 import gleam/string
 import jazz/notation.{
   type Clef, type Event, type Measure, type Part, type Score, Bass, ContinueBeam,
-  Note, Rest, Spacer, Stack, StartBeam, Treble,
+  Note, Rest, Spacer, Stack, StartBeam, Treble, Tuplet,
 }
 import jazz/pitch.{type Pitch}
 
@@ -181,6 +181,8 @@ fn written_measure(subject: Measure) -> String {
 fn gap(one: Event) -> String {
   case one {
     Note(beam: StartBeam, ..) | Note(beam: ContinueBeam, ..) -> ""
+    // A tuplet mark belongs against the notes it counts.
+    Tuplet(..) -> ""
     _ -> " "
   }
 }
@@ -212,6 +214,18 @@ fn event(one: Event) -> String {
       decorations(chord, annotation) <> "z" <> length(duration)
     Spacer(duration, chord, annotation) ->
       decorations(chord, annotation) <> "x" <> length(duration)
+    // `(3` is three notes in the time of two and reads as a triplet. The
+    // long form spells out the other cases: so many notes, in the time of
+    // so many, over so many of them.
+    Tuplet(3, 2, chord, annotation) -> decorations(chord, annotation) <> "(3"
+    Tuplet(count, into, chord, annotation) ->
+      decorations(chord, annotation)
+      <> "("
+      <> int.to_string(count)
+      <> ":"
+      <> int.to_string(into)
+      <> ":"
+      <> int.to_string(count)
   }
 }
 

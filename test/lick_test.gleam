@@ -42,7 +42,7 @@ fn first_tone(segment: lick.Segment) -> Result(pitch.Pitch, Nil) {
   |> list.filter_map(fn(event) {
     case event {
       lick.Tone(note, _, _) -> Ok(note)
-      lick.Rest(_) -> Error(Nil)
+      _ -> Error(Nil)
     }
   })
   |> list.first
@@ -54,7 +54,7 @@ fn silence(subject: lick.Line) -> Int {
   |> list.fold(0, fn(total, event) {
     case event {
       lick.Rest(beats) -> total + beats
-      lick.Tone(_, _, _) -> total
+      _ -> total
     }
   })
 }
@@ -117,6 +117,8 @@ pub fn rests_are_never_empty_test() {
           let beats = case event {
             lick.Rest(length) -> length
             lick.Tone(_, length, _) -> length
+            // A tuplet mark is a count, not a length.
+            lick.Triplet -> 1
           }
           assert beats > 0
         })
@@ -179,7 +181,7 @@ fn tones(segment: lick.Segment) -> List(pitch.Pitch) {
   list.filter_map(segment.events, fn(event) {
     case event {
       lick.Tone(note, _, _) -> Ok(note)
-      lick.Rest(_) -> Error(Nil)
+      _ -> Error(Nil)
     }
   })
 }
@@ -241,13 +243,17 @@ pub fn a_sequence_keeps_the_shape_test() {
       // Enough notes either side that the comparison is of the figure and
       // not of whatever approach note happened to follow it.
       repeated(after)
-      && list.length(tones(before)) >= 6
-      && list.length(tones(after)) >= 6
+      && list.length(tones(before)) >= 8
+      && list.length(tones(after)) >= 8
     })
   list.each(checked, fn(pair) {
     let #(before, after) = pair
+    // Three steps, not four. The last note of a figure is deliberately
+    // moved when it would otherwise stutter into the approach, so it was
+    // never part of the shape being repeated; with eight notes to play with,
+    // the first four are always clear of it.
     list.zip(deltas(tones(after)), deltas(tones(before)))
-    |> list.take(4)
+    |> list.take(3)
     |> list.each(fn(steps) {
       let #(here, there) = steps
       // An octave jump is a figure being folded back into the range rather
@@ -285,7 +291,7 @@ fn sounded(subject: lick.Line) -> List(lick.Event) {
   |> list.filter(fn(event) {
     case event {
       lick.Tone(_, _, _) -> True
-      lick.Rest(_) -> False
+      _ -> False
     }
   })
 }
@@ -330,7 +336,7 @@ pub fn a_tie_is_held_rather_than_played_again_test() {
     |> list.filter(fn(pair) {
       case pair.0 {
         lick.Tone(_, _, held) -> held
-        lick.Rest(_) -> False
+        _ -> False
       }
     })
   list.each(checked, fn(pair) {
@@ -360,7 +366,7 @@ pub fn the_line_leans_on_notes_test() {
       |> list.count(fn(event) {
         case event {
           lick.Tone(_, beats, _) -> beats > 1
-          lick.Rest(_) -> False
+          _ -> False
         }
       })
     })
@@ -489,4 +495,73 @@ pub fn generated_lines_fit_the_horn_test() {
       assert instrument.in_range(player, one)
     })
   })
+}
+
+// --- Triplets ----------------------------------------------------------------
+
+fn triplets(subject: lick.Line) -> Int {
+  subject.segments
+  |> list.flat_map(fn(one) { one.events })
+  |> list.count(fn(event) { event == lick.Triplet })
+}
+
+pub fn a_beginner_never_plays_a_triplet_test() {
+  // Three against two is the thing that makes a beginner's line fall apart,
+  // and an even stream of eighths is hard enough on its own.
+  list.each([1, 2, 3, 5, 8, 13, 21], fn(seed) {
+    assert triplets(chorus(lick.Beginner, seed)) == 0
+  })
+}
+
+pub fn the_others_do_test() {
+  let over = fn(level) {
+    [1, 2, 3, 5, 8, 13, 21]
+    |> list.map(fn(seed) { triplets(chorus(level, seed)) })
+    |> list.fold(0, fn(total, one) { total + one })
+  }
+  assert over(lick.Intermediate) > 0
+  // And whoever has the eighths to spare reaches for them more often.
+  assert over(lick.Advanced) > over(lick.Intermediate)
+}
+
+pub fn a_triplet_mark_always_has_three_notes_under_it_test() {
+  // A mark over two notes, or over a rest, is not a triplet: it is a broken
+  // bar that no reader can make sense of.
+  list.each([lick.Intermediate, lick.Advanced], fn(level) {
+    list.each([1, 2, 3, 5, 8, 13, 21, 34], fn(seed) {
+      list.each(chorus(level, seed).segments, fn(segment) {
+        counted(segment.events)
+      })
+    })
+  })
+}
+
+fn counted(events: List(lick.Event)) -> Nil {
+  case events {
+    [] -> Nil
+    [lick.Triplet, ..rest] -> {
+      let three = list.take(rest, 3)
+      assert list.length(three) == 3
+      list.each(three, fn(one) {
+        case one {
+          lick.Tone(_, length, _) -> {
+            assert length == 1
+          }
+          _ -> panic as "a triplet is three notes, not a rest"
+        }
+      })
+      counted(list.drop(rest, 3))
+    }
+    [_, ..rest] -> counted(rest)
+  }
+}
+
+pub fn a_triplet_takes_the_room_of_two_eighths_test() {
+  // Written as three, played in the time of two. If the arithmetic said
+  // otherwise the bars would not add up, which they are checked to do.
+  assert lick.room([]) == 0
+  let note = lick.Tone(pitch.note(pitch.C, 0, 4), 1, False)
+  assert lick.room([note, note]) == 2
+  assert lick.room([lick.Triplet, note, note, note]) == 2
+  assert lick.room([note, lick.Triplet, note, note, note, lick.Rest(4)]) == 7
 }
