@@ -152,6 +152,11 @@ input.wide {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
+input.seed {
+  min-width: 11ch;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
 /* A whole tune needs room, so the changes box takes whatever is left. */
 .field.grow {
   flex: 1 1 320px;

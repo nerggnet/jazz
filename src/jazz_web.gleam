@@ -161,8 +161,20 @@ fn controls(model: Model) -> Element(Msg) {
     session.ProgressionView -> source(model, [])
     session.LineView ->
       case session.generating_tune(model.session) {
-        True -> source(model, [all_keys(model), again()])
-        False -> source(model, [levels(model), all_keys(model), again()])
+        True ->
+          source(model, [
+            all_keys(model),
+            seed_box(model),
+            tune_seed_box(model),
+            again(),
+          ])
+        False ->
+          source(model, [
+            levels(model),
+            all_keys(model),
+            seed_box(model),
+            again(),
+          ])
       }
     session.AnalysisView -> source(model, [])
   }
@@ -425,6 +437,36 @@ fn again() -> Element(Msg) {
         html.text("Another line"),
       ],
     ),
+  )
+}
+
+/// The number that made this line.
+///
+/// The readout has always ended by naming it, and until now there was
+/// nowhere to put it back, so a line somebody liked yesterday was gone. It
+/// is typed rather than changed as you go, because every keystroke would
+/// otherwise engrave a line nobody asked for.
+fn seed_box(model: Model) -> Element(Msg) {
+  seed_field("Seed", model.session.seed, session.TypeSeed)
+}
+
+fn tune_seed_box(model: Model) -> Element(Msg) {
+  seed_field("Tune", model.session.tune_seed, session.TypeTuneSeed)
+}
+
+fn seed_field(
+  name: String,
+  value: Int,
+  action: fn(String) -> session.Action,
+) -> Element(Msg) {
+  field(
+    name,
+    html.input([
+      attribute.class("seed"),
+      attribute.type_("text"),
+      attribute.value(int.to_string(value)),
+      event.on_change(fn(text) { Did(action(text)) }),
+    ]),
   )
 }
 

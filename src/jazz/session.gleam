@@ -103,6 +103,9 @@ pub type Action {
   RoundAndRound(Bool)
   NewLine
   NewTune
+  /// Go back to a line or a tune by the number that made it.
+  TypeSeed(String)
+  TypeTuneSeed(String)
 }
 
 /// What the session is showing, ready to be put on screen.
@@ -179,6 +182,18 @@ pub fn update(session: Session, action: Action) -> Session {
       let #(next, _) = random.step(random.new(session.seed))
       Session(..session, seed: next)
     }
+    // A seed is the whole of what makes one line rather than another, so
+    // typing one back in is how a line played yesterday is found again.
+    TypeSeed(text) ->
+      case seed_from(text) {
+        Ok(seed) -> Session(..session, seed: seed)
+        Error(_) -> session
+      }
+    TypeTuneSeed(text) ->
+      case seed_from(text) {
+        Ok(seed) -> Session(..session, tune_seed: seed)
+        Error(_) -> session
+      }
     NewTune -> {
       let #(next, _) = random.step(random.new(session.tune_seed))
       Session(..session, tune_seed: next)
@@ -227,6 +242,15 @@ pub fn changes(session: Session) -> Result(Progression, String) {
         session.tune_seed,
       ))
     _, _ -> progression.build(session.progression_id, session.key)
+  }
+}
+
+/// Seeds are whole and positive, and a generator given nothing to work with
+/// returns the same thing every time.
+fn seed_from(text: String) -> Result(Int, Nil) {
+  case int.parse(string.trim(text)) {
+    Ok(seed) if seed > 0 -> Ok(seed)
+    _ -> Error(Nil)
   }
 }
 

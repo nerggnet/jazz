@@ -402,3 +402,46 @@ pub fn a_chord_gets_the_same_treatment_as_a_scale_test() {
   assert string.contains(abc_of(round), "[K:")
   assert string.contains(text_of(round), "Round the keys:")
 }
+
+pub fn a_line_can_be_found_again_by_its_number_test() {
+  // The readout has always ended by naming the seed. Now there is somewhere
+  // to put it back, which is the whole point of it being deterministic.
+  let start = showing(session.LineView)
+  let wanted = abc_of(start)
+
+  let wandered =
+    session.update(start, session.NewLine)
+    |> session.update(session.NewLine)
+    |> session.update(session.NewLine)
+  assert abc_of(wandered) != wanted
+
+  let back = session.update(wandered, session.TypeSeed("1"))
+  assert abc_of(back) == wanted
+  assert back.seed == 1
+}
+
+pub fn a_seed_that_is_not_a_number_is_ignored_test() {
+  // Somebody halfway through typing has not asked for anything yet.
+  let start = session.update(showing(session.LineView), session.TypeSeed("77"))
+  list.each(["", " ", "-4", "0", "twelve", "12a"], fn(rubbish) {
+    assert session.update(start, session.TypeSeed(rubbish)).seed == 77
+  })
+  // Spaces around a real one are just spaces.
+  assert session.update(start, session.TypeSeed("  91 ")).seed == 91
+}
+
+pub fn a_tune_has_a_seed_of_its_own_test() {
+  // The tune and the line over it are rerolled separately, so they are
+  // typed back separately too.
+  let generating =
+    session.update(
+      showing(session.LineView),
+      session.ChooseProgression(session.generated),
+    )
+  let moved =
+    session.update(generating, session.TypeTuneSeed("42"))
+    |> session.update(session.TypeSeed("7"))
+  assert moved.tune_seed == 42
+  assert moved.seed == 7
+  let assert session.Panel(_, _) = session.panel(moved)
+}

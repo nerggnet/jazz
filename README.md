@@ -33,6 +33,11 @@ Add `--all-keys` to walk the same scale round the cycle of fourths, which is
 the order everyone actually practises in. `--cycle fifths` and
 `--cycle chromatic` go the other ways.
 
+Running a scale up and back down teaches the notes and very little else, so
+`--pattern` makes an exercise out of it instead: `thirds`, `fourths`, `triads`,
+`sevenths`, or `digital` for the 1-2-3-5 every horn player knows. Each applies
+its shape from every degree going up and again coming down.
+
 ### Chords
 
 ```
@@ -56,6 +61,11 @@ Chord symbols accept the dialects people actually write: `Cm7`, `Cmi7`, `C-7`,
 `CM7`, `C^7`, `CΔ7`, `Cø`, `Cdim7`, `C7alt`, `C7b9#11`, `Cm(maj7)`, `C6/9`,
 `Am7/D`. Case matters in exactly one place, and it is the place you already
 know: `CM7` is major, `Cm7` is minor.
+
+`--pattern` works here too, from a list of its own: `inversions` plays the
+chord from each of its own notes in turn, `from-the-top` goes down first, and
+`threes` climbs one-three-five, three-five-seven, and on up. With `--all-keys`
+any of them runs round the cycle.
 
 ### Progressions
 
@@ -283,6 +293,12 @@ K:G
 "Am7"cBAF BA^EG | "D7"FEDC B,CC^C | "Gmaj7"DEFG ABE^C | "Gmaj7"DFGB dfgf |]
 ```
 
+Generated lines are phrased as well as spelled: eighths run slurred until the
+line leaps, whatever it leaps to is tongued, and the weight falls on the
+offbeat and on the top of each phrase. That is most of what separates a jazz
+line from the same notes played straight, and it carries into both the
+playback and the printed part.
+
 That is a complete tune: paste it into any ABC renderer, or pipe it to
 `abcm2ps` for a PDF. `abcjs` will both draw it and play it back, which is the
 reason ABC came first — it is the format you can check by reading, and the one
@@ -345,7 +361,11 @@ python3 -m http.server 8137 --directory dist
 
 Then open <http://127.0.0.1:8137>. Five views over the same theory — scales,
 chords, changes, generated lines, analysis — each showing engraved notation
-above the text the command line prints, for whichever horn is selected. The
+above the text the command line prints, for whichever horn is selected. A
+**Pattern** picker makes an exercise out of a scale or a chord, **Keys** takes
+whichever of those, or a whole lick, round the cycle of fourths, and **Seed**
+is the number that made a line, so one you liked is never more than a typed
+number away. The
 notation is drawn by [abcjs](https://www.abcjs.net/) from the same ABC the CLI
 emits, and the **Play** button plays it back, which is the thing a terminal
 cannot do and the reason the browser was worth the trouble.
