@@ -104,8 +104,18 @@ pub type Part {
     /// has its own, because a horn does not read in the same key as the
     /// piano standing next to it.
     signature: Int,
+    /// How far what is written is from what is heard, written to sounding.
+    /// `None` for a part that reads at concert pitch.
+    transpose: Option(Interval),
     measures: List(Measure),
   )
+}
+
+/// A part written for a horn, which sounds somewhere other than where it is
+/// written. `shift` is what moved the music onto the page; the part carries
+/// the way back.
+fn reading(part: Part, shift: Interval) -> Part {
+  Part(..part, transpose: Some(interval.negate(shift)))
 }
 
 pub type Score {
@@ -149,7 +159,7 @@ pub fn events(score: Score) -> List(Event) {
 pub fn only_part(score: Score) -> Part {
   case score.parts {
     [one, ..] -> one
-    [] -> Part("", Treble, instrument.piano, 0, [])
+    [] -> Part("", Treble, instrument.piano, 0, None, [])
   }
 }
 
@@ -204,11 +214,14 @@ pub fn from_pattern(
     tempo: Some(tempo),
     feel: None,
     parts: [
-      keyed(
-        sections,
-        Treble,
-        instrument.label(player),
-        instrument.sound(player),
+      reading(
+        keyed(
+          sections,
+          Treble,
+          instrument.label(player),
+          instrument.sound(player),
+        ),
+        instrument.write_interval_for_key(player, subject.root),
       ),
     ],
   )
@@ -329,6 +342,7 @@ pub fn from_chord(subject: Chord, player: Instrument, tempo: Int) -> Score {
     hint: written_chord.root,
     tempo: tempo,
     sound: instrument.sound(player),
+    shift: shift,
   )
 }
 
@@ -348,6 +362,7 @@ pub fn from_line(
     hint: interval.transpose_class(key, shift),
     tempo: tempo,
     sound: instrument.sound(player),
+    shift: shift,
   )
 }
 
@@ -389,12 +404,15 @@ pub fn from_line_with_backing(
     parts: [
       assemble_in(comping, changes.key, Treble, "Piano", instrument.piano),
       assemble_in(walking, changes.key, Bass, "Bass", instrument.bass),
-      assemble(
-        line_events(moved),
-        interval.transpose_class(changes.key, shift),
-        Treble,
-        instrument.label(player),
-        instrument.sound(player),
+      reading(
+        assemble(
+          line_events(moved),
+          interval.transpose_class(changes.key, shift),
+          Treble,
+          instrument.label(player),
+          instrument.sound(player),
+        ),
+        shift,
       ),
     ],
   )
@@ -464,6 +482,7 @@ pub fn from_progression(
         clef: Treble,
         sound: instrument.piano,
         signature: signature_near(moved.key),
+        transpose: Some(interval.negate(shift)),
         measures: measures,
       ),
     ],
@@ -552,6 +571,7 @@ fn build(
   hint hint: PitchClass,
   tempo tempo: Int,
   sound sound: Int,
+  shift shift: Interval,
 ) -> Score {
   Score(
     title: title,
@@ -560,7 +580,7 @@ fn build(
     unit: 8,
     tempo: Some(tempo),
     feel: None,
-    parts: [assemble(events, hint, Treble, subtitle, sound)],
+    parts: [reading(assemble(events, hint, Treble, subtitle, sound), shift)],
   )
 }
 
@@ -608,7 +628,14 @@ fn settle(
   name: String,
   sound: Int,
 ) -> Part {
-  Part(name, clef, sound, signature, apply_accidentals(measures, signature))
+  Part(
+    name,
+    clef,
+    sound,
+    signature,
+    None,
+    apply_accidentals(measures, signature),
+  )
 }
 
 /// Fill bars by duration rather than by count, so a held note takes the room

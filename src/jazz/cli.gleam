@@ -19,6 +19,7 @@ import jazz/pattern.{type Pattern}
 import jazz/pitch.{type PitchClass}
 import jazz/progression.{type Progression}
 import jazz/render/abc
+import jazz/render/musicxml
 import jazz/render/text
 import jazz/scale
 import jazz/tune
@@ -70,6 +71,21 @@ fn scale_command(args: List(String)) -> Result(String, String) {
           notation.from_pattern(one, shape, [one.root], player, beats)
         })
         |> abc.render_book
+      // A MusicXML file holds one score, so the keys go into one score
+      // rather than into a book of them: same music, and a notation program
+      // will open it.
+      MusicXml ->
+        case subjects {
+          [] -> ""
+          [first, ..] as all ->
+            musicxml.render(notation.from_pattern(
+              first,
+              shape,
+              list.map(all, fn(one: scale.Scale) { one.root }),
+              player,
+              beats,
+            ))
+        }
     }
   }
   case options.positional {
@@ -104,6 +120,7 @@ fn chord_command(args: List(String)) -> Result(String, String) {
       Ok(case format {
         Text -> text.chord_view(parsed, player)
         Abc -> abc.render(notation.from_chord(parsed, player, beats))
+        MusicXml -> musicxml.render(notation.from_chord(parsed, player, beats))
       })
     }
     _ -> Error("usage: jazz chord <symbol> [--for <instrument>]")
@@ -125,6 +142,12 @@ fn progression_command(args: List(String)) -> Result(String, String) {
         subjects
         |> list.map(notation.from_progression(_, player, beats))
         |> abc.render_book
+      MusicXml ->
+        case subjects {
+          [only] ->
+            musicxml.render(notation.from_progression(only, player, beats))
+          _ -> ""
+        }
     }
   }
   use requested <- result.try(key_option(options))
@@ -193,6 +216,22 @@ fn draw_lick(
       ))
     Abc, False ->
       abc.render(notation.from_line(line, title, changes.key, player, tempo))
+    MusicXml, True ->
+      musicxml.render(notation.from_line_with_backing(
+        line,
+        changes,
+        title,
+        player,
+        tempo,
+      ))
+    MusicXml, False ->
+      musicxml.render(notation.from_line(
+        line,
+        title,
+        changes.key,
+        player,
+        tempo,
+      ))
   }
 }
 
@@ -369,6 +408,7 @@ fn flag(options: Options, name: String) -> Option(String) {
 pub type Format {
   Text
   Abc
+  MusicXml
 }
 
 fn tempo_option(options: Options) -> Result(Int, String) {
@@ -393,7 +433,8 @@ fn format_option(options: Options) -> Result(Format, String) {
       case string.lowercase(string.trim(name)) {
         "text" | "plain" -> Ok(Text)
         "abc" -> Ok(Abc)
-        _ -> Error("unknown format `" <> name <> "`, try text or abc")
+        "musicxml" | "xml" -> Ok(MusicXml)
+        _ -> Error("unknown format `" <> name <> "`, try text, abc or musicxml")
       }
   }
 }
@@ -439,7 +480,7 @@ OPTIONS
                            sevenths, or digital
   --level <level>          beginner (default), intermediate, or advanced
   --seed <n>               Pick a different line; the same seed always repeats
-  --format <format>        text (default) or abc, for printable notation
+  --format <format>        text (default), abc, or musicxml
   --bars <n>               How long a generated tune should be (default: 16)
   --tempo <n>              Quarter notes a minute (default: 120)
   --backing                Write the piano part out on a staff of its own
@@ -457,6 +498,7 @@ EXAMPLES
   jazz lick \"|: Dm7 | G7 | Cmaj7 | Cmaj7 :|\" --for alto
   jazz scale C bebop-dominant --for tenor --format abc
   jazz lick blues --key Bb --for tenor --format abc > blues.abc
+  jazz lick blues --key Bb --for tenor --backing --format musicxml > blues.musicxml
   jazz progression tune --bars 32 --key F --level advanced --seed 3
   jazz lick tune --bars 16 --for alto --level intermediate
   jazz analyse blues --key F

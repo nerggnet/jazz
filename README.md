@@ -291,6 +291,19 @@ that will carry a web front end later.
 `--all-keys` produces a numbered tune book rather than twelve separate files,
 so a whole cycle prints as one document.
 
+`--format musicxml` writes the same score in the format every notation program
+reads, so a part can be opened in MuseScore or Sibelius, laid out, and printed:
+
+```
+$ gleam run -- lick blues --key Bb --for tenor --backing --format musicxml > blues.musicxml
+```
+
+That one carries things ABC has no room for — three staves each with their own
+instrument and MIDI sound, and a `<transpose>` saying what a horn sounds
+against what it reads, so the playback comes out in the right key. A MusicXML
+file holds one score rather than a book of them, so `--all-keys` puts the
+twelve keys into a single score with the key changing as it goes.
+
 Two things happen on the way out, and both belong to notation rather than to
 either format:
 
@@ -313,9 +326,10 @@ and written again in the next one. Nothing else is printed, because the two
 flats in the signature have already said the rest.
 
 `jazz/notation` holds the score — bars, durations, beams, key signature, chord
-symbols — and knows nothing about any file format. `jazz/render/abc` only
-spells what it is handed: it decides no accidentals, chooses no key, and groups
-no beams. A MusicXML backend is a second module over the same scores.
+symbols — and knows nothing about any file format. `jazz/render/abc` and
+`jazz/render/musicxml` only spell what they are handed: they decide no
+accidentals, choose no key, and group no beams. The second was written against
+the same scores as the first, without changing them.
 
 ## The web interface
 
@@ -395,6 +409,7 @@ share everything behind.
 | `jazz/notation` | Scores: bars, beams, key signatures, which accidentals print |
 | `jazz/render/text` | Terminal output |
 | `jazz/render/abc` | ABC notation output |
+| `jazz/render/musicxml` | MusicXML output, for notation programs |
 | `jazz/session` | The state an interactive front end holds, and what to show |
 | `jazz_web` | The Lustre web interface, and the bridge to abcjs |
 | `jazz/cli` | Argument handling |
