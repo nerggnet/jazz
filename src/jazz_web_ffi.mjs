@@ -52,6 +52,51 @@ export function renderNotation(abc) {
   return responsive(drawn.target);
 }
 
+// --- Fetching the sounds early -----------------------------------------------
+//
+// abcjs loads one mp3 a note from a soundfont on the web, and only when asked
+// to play: a scale is eight of them, but a line with a rhythm section under it
+// is three instruments and two dozen, and a dozen round trips is a wait long
+// enough to look broken. None of it depends on the Play button having been
+// pressed, though -- the music on screen is what will be played -- so it can
+// all happen while the page is being read instead.
+//
+// The samples are cached inside abcjs by instrument and note, so this is only
+// ever paid once for each, and playing afterwards finds everything already
+// there.
+
+let warmed = null;
+let warming = null;
+
+export function warm(abc) {
+  const abcjs = library();
+  if (!abcjs || !abcjs.synth.supportsAudio() || abc === warmed) return undefined;
+  warmed = abc;
+
+  // Engraved here rather than borrowed from the drawing on screen: the two
+  // happen in whichever order the framework likes, and warming up the last
+  // thing shown instead of the next thing to be played would be worse than
+  // not warming up at all.
+  const drawn = engrave(abc);
+  if (!drawn) return undefined;
+
+  try {
+    // Suspended until something is played, which is all this needs: decoding
+    // does not require a running context, and starting one before anybody has
+    // clicked would be rude.
+    warming =
+      warming ||
+      new (window.AudioContext || window.webkitAudioContext)();
+    new abcjs.synth.CreateSynth()
+      .init({ audioContext: warming, visualObj: drawn.tunes[0] })
+      .catch(() => {});
+  } catch (error) {
+    // No audio, or no room for another context. Playing will still work; it
+    // will just do the fetching itself.
+  }
+  return undefined;
+}
+
 // abcjs sizes its SVG with width and height attributes and no viewBox, so
 // narrowing the page clips the music instead of scaling it. Its own
 // `responsive: "resize"` mode fixes that by positioning the SVG absolutely,

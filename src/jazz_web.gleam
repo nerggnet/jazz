@@ -41,7 +41,16 @@ pub fn main() -> Nil {
 }
 
 fn init(_arguments) -> #(Model, Effect(Msg)) {
-  #(Model(session.new(), False), effect.none())
+  let model = Model(session.new(), False)
+  #(model, ready(model))
+}
+
+/// The sounds for whatever is on screen, fetched ahead of being asked for.
+fn ready(model: Model) -> Effect(Msg) {
+  case session.panel(model.session) {
+    session.Panel(_, abc) -> warm(abc)
+    session.Problem(_) -> effect.none()
+  }
 }
 
 fn update(model: Model, message: Msg) -> #(Model, Effect(Msg)) {
@@ -50,9 +59,11 @@ fn update(model: Model, message: Msg) -> #(Model, Effect(Msg)) {
     // and the notation describing different things.
     Did(action) -> {
       let moved = Model(session.update(model.session, action), False)
+      // Whatever is on screen is what Play will play, so its sounds can be
+      // fetched now rather than after somebody has asked to hear them.
       case model.playing {
-        True -> #(moved, silence())
-        False -> #(moved, effect.none())
+        True -> #(moved, effect.batch([silence(), ready(moved)]))
+        False -> #(moved, ready(moved))
       }
     }
     Play ->
@@ -98,6 +109,11 @@ fn keep(name: String, body: String) -> Effect(Msg) {
   effect.from(fn(_) {
     download(name, body, "application/vnd.recordare.musicxml+xml")
   })
+}
+
+/// Fetching the sounds is worth doing early and never worth waiting for.
+fn warm(abc: String) -> Effect(Msg) {
+  effect.from(fn(_) { fetch_sounds(abc) })
 }
 
 fn silence() -> Effect(Msg) {
@@ -653,6 +669,13 @@ fn play(
 ) -> Nil {
   case abc, quiet_horn, swing, count_in, again {
     _, _, _, _, _ -> on_ended()
+  }
+}
+
+@external(javascript, "./jazz_web_ffi.mjs", "warm")
+fn fetch_sounds(abc: String) -> Nil {
+  case abc {
+    _ -> Nil
   }
 }
 
