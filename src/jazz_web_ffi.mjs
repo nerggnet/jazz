@@ -81,7 +81,7 @@ function responsive(target) {
 // inside the SVG lands exactly where the notes are, and scales with them for
 // free because it lives in the same coordinate space.
 
-function raise(tune, swing) {
+function raise(tune, swing, delay) {
   const svg = document.querySelector(".notation svg");
   if (!svg) return false;
 
@@ -91,6 +91,7 @@ function raise(tune, swing) {
   );
   if (timings.length === 0) return false;
   if (swing) swingSight(timings, eighth(tune));
+  if (delay) waitFor(timings, delay);
 
   playhead = document.createElementNS(SVG_NS, "rect");
   playhead.setAttribute("class", "playhead");
@@ -197,6 +198,24 @@ function swingSight(list, perEighth) {
   }
 }
 
+// Four beats of woodblock before the music starts, the first one accented:
+// the numbers are the percussion notes and then how hard each is struck.
+// abcjs inserts a bar of rests into every voice to make room for it, which is
+// exactly a count-in, so none of this has to be arranged by hand.
+const COUNT = "dddd 76 77 77 77 95 65 65 65";
+
+function counting(wanted) {
+  return wanted
+    ? { drum: COUNT, drumBars: 1, drumIntro: 1, drumOff: true }
+    : {};
+}
+
+/// The playhead's timings come from an engraving with no count-in on the
+/// front, so everything it knows about is this much later than it thinks.
+function waitFor(list, delay) {
+  for (const one of list) one.milliseconds += delay;
+}
+
 /// How long an eighth lasts, taken from the engraving rather than assumed, so
 /// the tempo on the chart is the one the playhead counts in.
 function eighth(tune) {
@@ -208,7 +227,7 @@ function eighth(tune) {
 
 // --- Sound -------------------------------------------------------------------
 
-export function play(abc, quietHorn, swing, onEnded) {
+export function play(abc, quietHorn, swing, countIn, again, onEnded) {
   const abcjs = library();
   if (!abcjs || !abcjs.synth.supportsAudio()) {
     onEnded();
@@ -236,7 +255,10 @@ export function play(abc, quietHorn, swing, onEnded) {
     .init({
       audioContext: context,
       visualObj: drawn.tunes[0],
-      options: { chordsOff: staves(drawn.tunes[0]) > 1 },
+      options: {
+        chordsOff: staves(drawn.tunes[0]) > 1,
+        ...counting(countIn),
+      },
     })
     .then(() => {
       // Silencing the horn has to happen here. `voicesOff` only reaches the
@@ -253,21 +275,40 @@ export function play(abc, quietHorn, swing, onEnded) {
     .then((response) => {
       // A newer request may have replaced this one while the notes loaded.
       if (playing !== synth) return;
+      const intro = countIn
+        ? drawn.tunes[0].millisecondsPerMeasure() / 1000
+        : 0;
       synth.start();
 
       // The audio clock rather than a timer of our own, so the playhead
       // cannot drift away from what is being heard.
-      if (raise(drawn.tunes[0], swing)) {
+      const following = raise(drawn.tunes[0], swing, intro * 1000);
+      if (following) {
         clock = context;
         startedAt = context.currentTime;
         frame = requestAnimationFrame(follow);
       }
 
       const seconds = (response && response.duration) || 0;
-      timer = setTimeout(() => {
-        if (playing === synth) stop();
-        onEnded();
-      }, seconds * 1000 + 300);
+      const round = () => {
+        if (playing !== synth) return;
+        if (!again) {
+          stop();
+          onEnded();
+          return;
+        }
+        // Round again from after the count-in: it is there to start you off,
+        // not to interrupt every time round.
+        synth.stop();
+        synth.seek(intro, "seconds");
+        synth.start();
+        if (following) {
+          startedAt = context.currentTime - intro;
+          reached = 0;
+        }
+        timer = setTimeout(round, (seconds - intro) * 1000 + 40);
+      };
+      timer = setTimeout(round, seconds * 1000 + 300);
     })
     .catch(() => {
       if (playing === synth) playing = null;

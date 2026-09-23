@@ -213,7 +213,8 @@ button.primary:hover {
 /* --- The music --- */
 
 .paper {
-  position: relative;
+  display: flex;
+  flex-direction: column;
   background: var(--paper);
   border: 1px solid var(--edge);
   border-radius: 12px;
@@ -246,13 +247,19 @@ button.primary:hover {
   opacity: 0.4;
 }
 
-.controls-corner {
-  position: absolute;
-  top: 12px;
-  right: 14px;
+/* How it is played, as opposed to what: a row of its own above the music.
+   These used to float in the top corner, which worked while there were two
+   of them and sat across the title once there were four. They are written
+   after the notation so that the page reads music first, which is why the
+   order has to be asked for. */
+.playback {
+  order: -1;
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   align-items: center;
+  justify-content: flex-end;
+  margin-bottom: 6px;
 }
 
 .toggle {

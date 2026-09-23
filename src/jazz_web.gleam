@@ -58,7 +58,13 @@ fn update(model: Model, message: Msg) -> #(Model, Effect(Msg)) {
       case session.panel(model.session) {
         session.Panel(_, abc) -> #(
           Model(..model, playing: True),
-          sound(abc, !model.session.horn_sounds, model.session.swing),
+          sound(
+            abc,
+            !model.session.horn_sounds,
+            model.session.swing,
+            model.session.count_in,
+            model.session.round_and_round,
+          ),
         )
         session.Problem(_) -> #(model, effect.none())
       }
@@ -67,9 +73,15 @@ fn update(model: Model, message: Msg) -> #(Model, Effect(Msg)) {
   }
 }
 
-fn sound(abc: String, quiet_horn: Bool, swing: Bool) -> Effect(Msg) {
+fn sound(
+  abc: String,
+  quiet_horn: Bool,
+  swing: Bool,
+  count_in: Bool,
+  again: Bool,
+) -> Effect(Msg) {
   effect.from(fn(dispatch) {
-    play(abc, quiet_horn, swing, fn() { dispatch(Ended) })
+    play(abc, quiet_horn, swing, count_in, again, fn() { dispatch(Ended) })
   })
 }
 
@@ -442,8 +454,10 @@ fn stage(model: Model) -> Element(Msg) {
             [attribute.class("notation")],
             render_notation(abc),
           ),
-          html.div([attribute.class("controls-corner")], [
+          html.div([attribute.class("playback")], [
             swing_switch(model),
+            count_switch(model),
+            loop_switch(model),
             horn_switch(model),
             play_button(model),
           ]),
@@ -457,18 +471,35 @@ fn stage(model: Model) -> Element(Msg) {
 /// long-short is a different exercise from one practised straight, so it is
 /// a switch rather than a decision.
 fn swing_switch(model: Model) -> Element(Msg) {
+  switch(model.session.swing, session.SwingIt, "Swing", "Straight")
+}
+
+fn count_switch(model: Model) -> Element(Msg) {
+  switch(model.session.count_in, session.CountIn, "Count in", "No count")
+}
+
+fn loop_switch(model: Model) -> Element(Msg) {
+  switch(model.session.round_and_round, session.RoundAndRound, "Loop", "Once")
+}
+
+fn switch(
+  on: Bool,
+  action: fn(Bool) -> session.Action,
+  when_on: String,
+  when_off: String,
+) -> Element(Msg) {
   html.button(
     [
-      attribute.class(case model.session.swing {
+      attribute.class(case on {
         True -> "toggle on"
         False -> "toggle"
       }),
-      event.on_click(Did(session.SwingIt(!model.session.swing))),
+      event.on_click(Did(action(!on))),
     ],
     [
-      html.text(case model.session.swing {
-        True -> "Swing"
-        False -> "Straight"
+      html.text(case on {
+        True -> when_on
+        False -> when_off
       }),
     ],
   )
@@ -527,10 +558,12 @@ fn play(
   abc: String,
   quiet_horn: Bool,
   swing: Bool,
+  count_in: Bool,
+  again: Bool,
   on_ended: fn() -> Nil,
 ) -> Nil {
-  case abc, quiet_horn, swing {
-    _, _, _ -> on_ended()
+  case abc, quiet_horn, swing, count_in, again {
+    _, _, _, _, _ -> on_ended()
   }
 }
 

@@ -292,3 +292,37 @@ pub fn a_backed_line_is_a_band_test() {
   assert string.contains(music, "V:2 clef=bass name=\"Bass\"")
   assert string.contains(music, "%%MIDI program 32")
 }
+
+pub fn the_playing_switches_all_flip_test() {
+  // Four things about how it is played rather than what is played, each one
+  // its own switch and none of them changing the other.
+  let subject = showing(session.LineView)
+  assert subject.swing && !subject.count_in && !subject.round_and_round
+  assert subject.horn_sounds
+
+  let flipped =
+    session.update(subject, session.CountIn(True))
+    |> session.update(session.RoundAndRound(True))
+    |> session.update(session.SwingIt(False))
+    |> session.update(session.PlayTheHorn(False))
+  assert flipped.count_in && flipped.round_and_round
+  assert !flipped.swing && !flipped.horn_sounds
+
+  // None of them touches the notes on the page; only the feel is written.
+  assert abc_of(session.update(subject, session.CountIn(True)))
+    == abc_of(subject)
+  assert abc_of(session.update(subject, session.RoundAndRound(True)))
+    == abc_of(subject)
+}
+
+pub fn a_practice_pattern_reaches_the_page_test() {
+  let subject =
+    showing(session.ScaleView)
+    |> session.update(session.ChoosePatternNamed("sevenths"))
+  assert string.contains(text_of(subject), "Sevenths")
+  assert string.contains(abc_of(subject), "sevenths")
+
+  let round = session.update(subject, session.RoundTheKeys(True))
+  assert string.contains(abc_of(round), "round the keys")
+  assert string.contains(abc_of(round), "[K:")
+}

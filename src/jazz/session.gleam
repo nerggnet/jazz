@@ -57,6 +57,11 @@ pub type Session {
     /// Whether eighths are read long-short. On for jazz, which is nearly
     /// always, and off for anything meant to be played straight.
     swing: Bool,
+    /// Four beats before the music, so there is time to get the horn up.
+    count_in: Bool,
+    /// Round and round until stopped, which is what practising against a
+    /// backing actually means.
+    round_and_round: Bool,
     seed: Int,
     /// Kept apart from the line's seed so a tune can be kept while the line
     /// over it is rerolled, and the other way round.
@@ -87,6 +92,8 @@ pub type Action {
   ChooseTempoNamed(String)
   PlayTheHorn(Bool)
   SwingIt(Bool)
+  CountIn(Bool)
+  RoundAndRound(Bool)
   NewLine
   NewTune
 }
@@ -112,6 +119,8 @@ pub fn new() -> Session {
     tempo: notation.default_tempo,
     horn_sounds: True,
     swing: True,
+    count_in: False,
+    round_and_round: False,
     seed: 1,
     tune_seed: 1,
     view: ScaleView,
@@ -173,6 +182,8 @@ pub fn update(session: Session, action: Action) -> Session {
       }
     PlayTheHorn(sounding) -> Session(..session, horn_sounds: sounding)
     SwingIt(swung) -> Session(..session, swing: swung)
+    CountIn(counted) -> Session(..session, count_in: counted)
+    RoundAndRound(round) -> Session(..session, round_and_round: round)
     RoundTheKeys(round) -> Session(..session, round_the_keys: round)
     ChoosePatternNamed(name) ->
       case pattern.from_string(name) {
