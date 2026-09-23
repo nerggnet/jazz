@@ -246,13 +246,7 @@ pub fn from_pattern(
   )
 }
 
-/// One key's worth of the exercise, written and shaped into bars.
-///
-/// Spelled whichever of the enharmonic ways needs the smaller signature. The
-/// instrument's own rule looks at the key it is handed, which is enough for a
-/// major scale, but a mode reaches further round the line of fifths than its
-/// root does: concert E read by an alto is D-flat, and D-flat Dorian wants
-/// seven flats where C-sharp Dorian wants five sharps.
+/// One key's worth of an exercise.
 fn section(
   kind: ScaleKind,
   shape: Pattern,
@@ -261,12 +255,33 @@ fn section(
   keys: List(PitchClass),
 ) -> #(PitchClass, Int, List(Measure)) {
   let here = scale.Scale(key, kind)
-  let plain_shift = instrument.write_interval_for_key(player, key)
-  let respell = interval.degree(2, -2)
-  let last = case keys {
+  let alone = case keys {
     [_] -> True
     _ -> False
   }
+  spelled(key, player, alone, fn(shift) {
+    plain(
+      hold_last(eighths(written(pattern.notes(shape, here), shift, player))),
+      [],
+    )
+  })
+}
+
+/// One key's worth of something, written and shaped into bars.
+///
+/// Spelled whichever of the enharmonic ways needs the smaller signature. The
+/// instrument's own rule looks at the key it is handed, which is enough for a
+/// major scale, but a mode reaches further round the line of fifths than its
+/// root does: concert E read by an alto is D-flat, and D-flat Dorian wants
+/// seven flats where C-sharp Dorian wants five sharps.
+fn spelled(
+  key: PitchClass,
+  player: Instrument,
+  alone: Bool,
+  write: fn(Interval) -> List(Event),
+) -> #(PitchClass, Int, List(Measure)) {
+  let plain_shift = instrument.write_interval_for_key(player, key)
+  let respell = interval.degree(2, -2)
 
   [
     plain_shift,
@@ -275,12 +290,10 @@ fn section(
   ]
   |> list.map(fn(shift) {
     let written_key = interval.transpose_class(key, shift)
-    let events =
-      plain(
-        hold_last(eighths(written(pattern.notes(shape, here), shift, player))),
-        [],
-      )
-    let measures = case last {
+    let events = write(shift)
+    // Everything but the last is rounded up to whole bars, so the next key
+    // starts on a downbeat and the player gets a moment to find it.
+    let measures = case alone {
       True -> shaped(events)
       False -> shaped(bar_out(events))
     }
@@ -498,6 +511,64 @@ fn carrying(
   }
 }
 
+/// One line taken round the keys, as a study rather than as a chorus.
+///
+/// Learning a lick means owning it in every key, which is a different job
+/// from playing it once where it was written, and it is what the cycle of
+/// fourths is for. The rhythm section is left out: twelve keys of one line is
+/// the exercise, and three staves of it twelve times over is a wall.
+pub fn from_line_in_keys(
+  line: Line,
+  changes: Progression,
+  heading: String,
+  player: Instrument,
+  tempo: Int,
+  keys: List(PitchClass),
+) -> Score {
+  let sections =
+    list.map(keys, fn(key) {
+      // The line was generated in one key; every other one is that line
+      // moved, chord symbols and all.
+      let step =
+        interval.between(Pitch(changes.key, 4), Pitch(key, 4))
+        |> interval.simple
+      let here = lick.transpose(line, step)
+      spelled(key, player, list.length(keys) == 1, fn(shift) {
+        // The line carries its own chord symbols, so moving it moves those
+        // with it; what is left is finding an octave the horn has.
+        let moved = lick.transpose(here, shift) |> lick.simplify_spelling
+        line_events(lick.transpose(
+          moved,
+          interval.octaves(reachable(lick.pitches(moved), player)),
+        ))
+      })
+    })
+
+  Score(
+    title: heading
+      <> case keys {
+      [_] -> ""
+      _ -> ", round the keys"
+    },
+    subtitle: instrument.label(player),
+    time: #(4, 4),
+    unit: 8,
+    tempo: Some(tempo),
+    feel: None,
+    parts: [
+      reading(
+        keyed(
+          sections,
+          Treble,
+          instrument.label(player),
+          instrument.sound(player),
+        ),
+        instrument.write_interval_for_key(player, changes.key),
+      ),
+    ],
+  )
+}
+
 /// A chord chart: bars carrying symbols and no printed notes.
 pub fn from_progression(
   subject: Progression,
@@ -601,20 +672,29 @@ fn written(
   player: Instrument,
 ) -> List(Pitch) {
   let moved = list.map(notes, interval.transpose(_, shift))
-  let best =
-    [0, -1, 1, -2, 2]
-    |> list.fold(#(-1, 0), fn(found, octaves) {
-      let #(best_count, _) = found
-      let inside =
-        moved
-        |> list.map(interval.transpose(_, interval.octaves(octaves)))
-        |> list.count(instrument.in_range(player, _))
-      case inside > best_count {
-        True -> #(inside, octaves)
-        False -> found
-      }
-    })
-  list.map(moved, interval.transpose(_, interval.octaves(best.1)))
+  list.map(moved, interval.transpose(
+    _,
+    interval.octaves(reachable(moved, player)),
+  ))
+}
+
+/// Which octave to put something in, being the one that leaves the most of it
+/// inside the horn. A line moved to another key can land above or below what
+/// the player has, and moving it by octaves is how that is answered.
+fn reachable(notes: List(Pitch), player: Instrument) -> Int {
+  [0, -1, 1, -2, 2]
+  |> list.fold(#(-1, 0), fn(found, octaves) {
+    let #(most, _) = found
+    let inside =
+      notes
+      |> list.map(interval.transpose(_, interval.octaves(octaves)))
+      |> list.count(instrument.in_range(player, _))
+    case inside > most {
+      True -> #(inside, octaves)
+      False -> found
+    }
+  })
+  |> fn(found) { found.1 }
 }
 
 /// Lay events into bars, pick a key signature, work out the accidentals.

@@ -190,7 +190,30 @@ fn lick_command(args: List(String)) -> Result(String, String) {
       let line =
         lick.over_progression(built, lick.Options(level, seed, low, high))
       let backed = flag(options, "backing") != None
-      Ok(draw_lick(line, built, heading(built), player, format, beats, backed))
+      case flag(options, "all-keys") {
+        // A lick in twelve keys is the exercise; a backing to play it
+        // against once is a different one.
+        Some(_) ->
+          Ok(draw_keys(
+            line,
+            built,
+            heading(built),
+            player,
+            format,
+            beats,
+            keys(built.key, flag(options, "cycle")),
+          ))
+        None ->
+          Ok(draw_lick(
+            line,
+            built,
+            heading(built),
+            player,
+            format,
+            beats,
+            backed,
+          ))
+      }
     }
   }
 }
@@ -232,6 +255,25 @@ fn draw_lick(
         player,
         tempo,
       ))
+  }
+}
+
+/// One line round the keys, on one staff.
+fn draw_keys(
+  line: lick.Line,
+  changes: Progression,
+  title: String,
+  player: Instrument,
+  format: Format,
+  tempo: Int,
+  round: List(pitch.PitchClass),
+) -> String {
+  let score =
+    notation.from_line_in_keys(line, changes, title, player, tempo, round)
+  case format {
+    Text -> text.lick_view(line, title, player, changes.key)
+    Abc -> abc.render(score)
+    MusicXml -> musicxml.render(score)
   }
 }
 
@@ -495,6 +537,7 @@ EXAMPLES
   jazz progression blues --key Bb --for tenor
   jazz lick ii-V-I --key C --for alto --level intermediate
   jazz lick Dm7 G7 Cmaj7 --for tenor --seed 12
+  jazz lick ii-V-I --key C --for alto --all-keys --format musicxml
   jazz lick \"|: Dm7 | G7 | Cmaj7 | Cmaj7 :|\" --for alto
   jazz scale C bebop-dominant --for tenor --format abc
   jazz lick blues --key Bb --for tenor --format abc > blues.abc

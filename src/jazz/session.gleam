@@ -42,9 +42,11 @@ pub type Session {
     /// Always the concert key, whatever instrument is selected.
     key: PitchClass,
     kind: ScaleKind,
-    /// Which exercise is made out of the scale, and whether it runs through
-    /// every key or stays in the one on screen.
+    /// Which exercise is made out of the scale.
     shape: Pattern,
+    /// Whether an exercise runs through every key or stays in the one on
+    /// screen. It means the same thing to a scale and to a line: the cycle
+    /// of fourths, which is how either is actually practised.
     round_the_keys: Bool,
     chord_text: String,
     changes_text: String,
@@ -360,16 +362,28 @@ fn showing(session: Session) -> Result(#(String, notation.Score), String) {
               session.player,
               built.key,
             ),
-            marked(
-              session,
-              notation.from_line_with_backing(
-                line,
-                built,
-                heading(session, built),
-                session.player,
-                session.tempo,
-              ),
-            ),
+            marked(session, case session.round_the_keys {
+              // A line in twelve keys is a study of the line, so it goes on
+              // one staff; the rhythm section is there to play a chorus
+              // against, which is a different thing.
+              True ->
+                notation.from_line_in_keys(
+                  line,
+                  built,
+                  heading(session, built),
+                  session.player,
+                  session.tempo,
+                  progression.cycle_of_fourths(built.key),
+                )
+              False ->
+                notation.from_line_with_backing(
+                  line,
+                  built,
+                  heading(session, built),
+                  session.player,
+                  session.tempo,
+                )
+            }),
           ))
         }
       }

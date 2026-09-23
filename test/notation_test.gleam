@@ -543,3 +543,68 @@ pub fn the_backing_is_left_unmarked_test() {
     })
   })
 }
+
+pub fn a_line_can_be_taken_round_the_keys_test() {
+  // Owning a lick means owning it in every key, which is a different job
+  // from playing it once where it was written.
+  let assert Ok(alto) = instrument.find("alto")
+  let assert Ok(changes) = progression.build("ii-V-I", PitchClass(C, 0))
+  let line = lick.over_progression(changes, lick.options(lick.Intermediate, 3))
+  let keys = progression.cycle_of_fourths(PitchClass(C, 0))
+  let score =
+    notation.from_line_in_keys(
+      line,
+      changes,
+      "test",
+      alto,
+      notation.default_tempo,
+      keys,
+    )
+
+  // One staff, twelve times the music, and eleven key signatures arriving
+  // along the way.
+  let part = notation.only_part(score)
+  let once =
+    notation.from_line(
+      line,
+      "test",
+      PitchClass(C, 0),
+      alto,
+      notation.default_tempo,
+    )
+  assert list.length(part.measures)
+    == 12 * list.length(notation.only_part(once).measures)
+  let changes_of_key =
+    list.count(part.measures, fn(one) { one.key != option.None })
+  assert changes_of_key == 11
+
+  // The same line every time: each section has the same shape of steps.
+  let steps = fn(measures) {
+    list.flat_map(measures, fn(one: notation.Measure) { one.events })
+    |> list.filter_map(fn(event) {
+      case event {
+        notation.Note(pitch: note, ..) -> Ok(pitch.to_midi(note))
+        _ -> Error(Nil)
+      }
+    })
+    |> fn(notes) {
+      list.zip(notes, list.drop(notes, 1))
+      |> list.map(fn(two) { two.1 - two.0 })
+    }
+  }
+  let first = steps(list.take(part.measures, 4))
+  list.each([4, 8, 20, 44], fn(from) {
+    assert steps(list.take(list.drop(part.measures, from), 4)) == first
+  })
+
+  // And it stays somewhere the horn can play it.
+  list.each(notation.events(score), fn(event) {
+    case event {
+      notation.Note(pitch: note, ..) -> {
+        assert pitch.to_midi(note) >= pitch.to_midi(alto.lowest_written)
+        assert pitch.to_midi(note) <= pitch.to_midi(alto.highest_written)
+      }
+      _ -> Nil
+    }
+  })
+}

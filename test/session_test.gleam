@@ -372,3 +372,18 @@ pub fn the_feel_reaches_the_file_too_test() {
   let assert Ok(#(_, plain)) = session.sheet(straight)
   assert !string.contains(plain, "Swing")
 }
+
+pub fn a_line_goes_round_the_keys_too_test() {
+  // The same switch means the same thing on a scale and on a lick.
+  let once = showing(session.LineView)
+  let round = session.update(once, session.RoundTheKeys(True))
+  let assert session.Panel(_, plain) = session.panel(once)
+  let assert session.Panel(_, twelve) = session.panel(round)
+
+  assert !string.contains(plain, "round the keys")
+  assert string.contains(twelve, "round the keys")
+  assert string.contains(twelve, "[K:")
+  // One staff for a study, three for a chorus with a band behind it.
+  assert string.contains(plain, "V:2 clef=bass")
+  assert !string.contains(twelve, "V:")
+}

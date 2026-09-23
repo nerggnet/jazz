@@ -161,8 +161,8 @@ fn controls(model: Model) -> Element(Msg) {
     session.ProgressionView -> source(model, [])
     session.LineView ->
       case session.generating_tune(model.session) {
-        True -> source(model, [again()])
-        False -> source(model, [levels(model), again()])
+        True -> source(model, [all_keys(model), again()])
+        False -> source(model, [levels(model), all_keys(model), again()])
       }
     session.AnalysisView -> source(model, [])
   }
@@ -268,8 +268,8 @@ fn patterns(model: Model) -> Element(Msg) {
   )
 }
 
-/// The same exercise round the cycle of fourths, which is how it is actually
-/// practised once the shape is under the fingers.
+/// The same thing round the cycle of fourths, which is how a scale pattern
+/// and a lick are both actually practised once they are under the fingers.
 fn all_keys(model: Model) -> Element(Msg) {
   field(
     "Keys",
