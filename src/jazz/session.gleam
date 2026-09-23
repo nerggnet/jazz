@@ -271,10 +271,10 @@ pub fn panel(session: Session) -> Panel {
               session.player,
               built.key,
             ),
-            abc.render(notation.from_line(
+            abc.render(notation.from_line_with_backing(
               line,
+              built,
               heading(session, built),
-              built.key,
               session.player,
               session.tempo,
             )),

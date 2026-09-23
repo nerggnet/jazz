@@ -155,22 +155,33 @@ fn lick_command(args: List(String)) -> Result(String, String) {
       let #(low, high) = instrument.comfortable_range(player)
       let line =
         lick.over_progression(built, lick.Options(level, seed, low, high))
-      Ok(draw_lick(line, heading(built), built.key, player, format, beats))
+      let backed = flag(options, "backing") != None
+      Ok(draw_lick(line, built, heading(built), player, format, beats, backed))
     }
   }
 }
 
 fn draw_lick(
   line: lick.Line,
+  changes: Progression,
   title: String,
-  key: PitchClass,
   player: Instrument,
   format: Format,
   tempo: Int,
+  backed: Bool,
 ) -> String {
-  case format {
-    Text -> text.lick_view(line, title, player, key)
-    Abc -> abc.render(notation.from_line(line, title, key, player, tempo))
+  case format, backed {
+    Text, _ -> text.lick_view(line, title, player, changes.key)
+    Abc, True ->
+      abc.render(notation.from_line_with_backing(
+        line,
+        changes,
+        title,
+        player,
+        tempo,
+      ))
+    Abc, False ->
+      abc.render(notation.from_line(line, title, changes.key, player, tempo))
   }
 }
 
@@ -304,7 +315,7 @@ type Options {
 
 /// Flags that stand on their own rather than taking a value.
 fn is_switch(name: String) -> Bool {
-  list.contains(["all-keys", "help"], name)
+  list.contains(["all-keys", "help", "backing"], name)
 }
 
 fn parse(args: List(String)) -> Result(Options, String) {
@@ -411,6 +422,7 @@ OPTIONS
   --format <format>        text (default) or abc, for printable notation
   --bars <n>               How long a generated tune should be (default: 16)
   --tempo <n>              Quarter notes a minute (default: 120)
+  --backing                Write the piano part out on a staff of its own
   --cycle <order>          fourths (default), fifths, or chromatic
 
 EXAMPLES

@@ -25,6 +25,12 @@ let timings = [];
 let reached = 0;
 let system = null;
 
+/// How many staves a system has. Two means somebody wrote the backing out.
+function staves(tune) {
+  const line = (tune.lines || []).find((one) => one.staff);
+  return line ? line.staff.length : 1;
+}
+
 function library() {
   return globalThis.ABCJS;
 }
@@ -171,7 +177,14 @@ export function play(abc, onEnded) {
     // No tempo override: the score carries one, and the playhead reads its
     // timings from the same place. Telling the synth something different is
     // how the two came apart.
-    .init({ audioContext: context, visualObj: drawn.tunes[0] })
+    //
+    // Chord symbols are voiced automatically unless there is a written part
+    // doing that job already, in which case hearing both is just thicker.
+    .init({
+      audioContext: context,
+      visualObj: drawn.tunes[0],
+      options: { chordsOff: staves(drawn.tunes[0]) > 1 },
+    })
     .then(() => synth.prime())
     .then((response) => {
       // A newer request may have replaced this one while the notes loaded.

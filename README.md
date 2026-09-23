@@ -143,6 +143,13 @@ happens. A figure is allowed to come back twice and no more: stating an idea,
 sequencing it, and then going somewhere else is the shape of the thing, and a
 fourth time is a stuck record.
 
+In the interface the line comes with the backing written out above it: the
+piano on a bass staff at concert pitch, your part underneath in your own key,
+on one score. Shell voicings — the root, and above it the third and the seventh
+— chosen to move as little as possible from chord to chord, which is what a
+pianist does without thinking about it. On the command line `--backing` does
+the same.
+
 `--level` decides how much vocabulary is in play and how much room it leaves:
 beginners get plain arpeggios and scale runs into their targets, and come in on
 the beat with half a bar of silence at the end of every phrase; advanced lines
@@ -378,6 +385,7 @@ share everything behind.
 | `jazz/progression` | Progressions built from degrees, and changes read off a chart |
 | `jazz/tune` | Making up changes, from the cells the analyser knows how to find |
 | `jazz/lick` | Line generation: targets, approaches and connective devices |
+| `jazz/comp` | Voicing the backing, so the piano part can be written out |
 | `jazz/analysis` | Finding two-fives, substitutes and guide tone lines in changes |
 | `jazz/notation` | Scores: bars, beams, key signatures, which accidentals print |
 | `jazz/render/text` | Terminal output |

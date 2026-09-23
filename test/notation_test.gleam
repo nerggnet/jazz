@@ -14,6 +14,10 @@ fn concert() -> instrument.Instrument {
   instrument.concert()
 }
 
+fn signature_of(score: notation.Score) -> Int {
+  notation.only_part(score).signature
+}
+
 fn scale_score(root: PitchClass, kind: scale.ScaleKind) -> notation.Score {
   notation.from_scale(
     scale.Scale(root, kind),
@@ -47,24 +51,30 @@ fn accidentals(score: notation.Score) -> List(option.Option(Int)) {
 // --- Key signatures ----------------------------------------------------------
 
 pub fn the_signature_is_the_one_with_least_ink_test() {
-  assert scale_score(PitchClass(C, 0), scale.Ionian).signature == 0
+  assert signature_of(scale_score(PitchClass(C, 0), scale.Ionian)) == 0
   // D Dorian is spelled with the notes of C major, so it needs no accidentals
   // of its own. For alto that is written B Dorian, which is A major.
-  assert scale_score(PitchClass(D, 0), scale.Dorian).signature == 0
+  assert signature_of(scale_score(PitchClass(D, 0), scale.Dorian)) == 0
   let assert Ok(alto) = instrument.find("alto")
   assert notation.from_scale(
       scale.Scale(PitchClass(D, 0), scale.Dorian),
       alto,
       notation.default_tempo,
-    ).signature
+    )
+    |> notation.only_part
+    |> fn(part) { part.signature }
     == 3
   // Five flats leaves the altered scale needing only one accidental.
-  assert scale_score(PitchClass(C, 0), scale.Altered).signature == -5
+  assert signature_of(scale_score(PitchClass(C, 0), scale.Altered)) == -5
 }
 
 pub fn a_chart_with_no_notes_keeps_its_own_key_test() {
   let assert Ok(built) = progression.build("ii-V-I", PitchClass(F, 0))
-  assert notation.from_progression(built, concert(), notation.default_tempo).signature
+  assert notation.only_part(notation.from_progression(
+      built,
+      concert(),
+      notation.default_tempo,
+    )).signature
     == -1
 }
 
@@ -96,7 +106,7 @@ pub fn the_same_letter_can_be_bent_both_ways_in_one_bar_test() {
 pub fn bars_are_filled_by_duration_test() {
   let score = scale_score(PitchClass(C, 0), scale.Ionian)
   let lengths =
-    list.map(score.measures, fn(one) {
+    list.map(notation.only_part(score).measures, fn(one) {
       list.fold(one.events, 0, fn(total, event) {
         total + notation.duration_of(event)
       })
@@ -172,7 +182,11 @@ pub fn chord_symbols_are_quoted_test() {
 pub fn a_chart_has_one_bar_per_bar_test() {
   let assert Ok(built) = progression.build("blues", PitchClass(F, 0))
   assert list.length(
-      notation.from_progression(built, concert(), notation.default_tempo).measures,
+      notation.only_part(notation.from_progression(
+        built,
+        concert(),
+        notation.default_tempo,
+      )).measures,
     )
     == 12
 }
@@ -194,7 +208,7 @@ pub fn every_duration_can_be_written_down_test() {
           concert(),
           notation.default_tempo,
         )
-      list.each(score.measures, fn(measure) {
+      list.each(notation.only_part(score).measures, fn(measure) {
         let #(_, total) =
           list.fold(measure.events, #(0, 0), fn(state, event) {
             let #(at, sum) = state
@@ -221,7 +235,7 @@ pub fn a_bar_shared_three_ways_still_adds_up_test() {
   let assert Ok(changes) = progression.parse("| Dm7 G7 Cmaj7 | Cmaj7 |")
   let score =
     notation.from_progression(changes, concert(), notation.default_tempo)
-  list.each(score.measures, fn(measure) {
+  list.each(notation.only_part(score).measures, fn(measure) {
     let total =
       list.fold(measure.events, 0, fn(sum, event) {
         sum + notation.duration_of(event)
@@ -277,6 +291,53 @@ pub fn a_score_says_how_fast_it_goes_test() {
     assert score.tempo == Some(notation.default_tempo)
     assert string.contains(abc.render(score), "Q:1/4=")
   })
+}
+
+pub fn a_backed_line_has_two_staves_test() {
+  // The piano on top at concert pitch, the part to play underneath. Each
+  // staff keeps its own key, because a horn does not read in the same one.
+  let assert Ok(alto) = instrument.find("alto")
+  let assert Ok(built) = progression.build("ii-V-I", PitchClass(C, 0))
+  let line = lick.over_progression(built, lick.options(lick.Beginner, 1))
+  let score =
+    notation.from_line_with_backing(
+      line,
+      built,
+      "test",
+      alto,
+      notation.default_tempo,
+    )
+
+  let assert [piano, horn] = score.parts
+  assert piano.clef == notation.Bass
+  assert horn.clef == notation.Treble
+  assert piano.signature == 0
+  assert horn.signature == 3
+  assert list.length(piano.measures) == list.length(horn.measures)
+
+  // Both staves run the same length, whatever is written on them.
+  let fill = fn(part: notation.Part) {
+    list.map(part.measures, fn(measure) {
+      list.fold(measure.events, 0, fn(sum, event) {
+        sum + notation.duration_of(event)
+      })
+    })
+  }
+  assert fill(piano) == fill(horn)
+
+  let written = abc.render(score)
+  assert string.contains(written, "V:1 clef=bass")
+  assert string.contains(written, "V:2 clef=treble")
+  // The second staff has to say its clef again while announcing its key, or
+  // the key change resets it to the one in the header.
+  assert string.contains(written, "[K:A clef=treble]")
+}
+
+pub fn a_single_staff_score_says_nothing_about_voices_test() {
+  // Adding parts must not change how an ordinary one part tune comes out.
+  let music = abc.render(scale_score(PitchClass(C, 0), scale.Ionian))
+  assert !string.contains(music, "V:")
+  assert string.contains(music, "CDEF GABc")
 }
 
 pub fn the_header_says_what_it_is_test() {

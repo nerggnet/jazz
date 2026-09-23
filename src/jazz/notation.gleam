@@ -18,6 +18,7 @@ import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import jazz/chord.{type Chord}
+import jazz/comp
 import jazz/instrument.{type Instrument}
 import jazz/internal/num
 import jazz/interval.{type Interval}
@@ -47,6 +48,15 @@ pub type Event {
     /// Held into the note after it rather than played again.
     tied: Bool,
   )
+  /// Notes sounding together, as a piano plays a chord. Accidentals are
+  /// decided per note, in the same order.
+  Stack(
+    pitches: List(Pitch),
+    duration: Int,
+    accidentals: List(Option(Int)),
+    chord: Option(String),
+    annotation: Option(String),
+  )
   Rest(duration: Int, chord: Option(String), annotation: Option(String))
   /// Time that passes without a printed note, for chord charts.
   Spacer(duration: Int, chord: Option(String), annotation: Option(String))
@@ -54,6 +64,24 @@ pub type Event {
 
 pub type Measure {
   Measure(events: List(Event))
+}
+
+pub type Clef {
+  Treble
+  Bass
+}
+
+/// One staff of a score.
+pub type Part {
+  Part(
+    name: String,
+    clef: Clef,
+    /// The key signature, as a position on the line of fifths. Every staff
+    /// has its own, because a horn does not read in the same key as the
+    /// piano standing next to it.
+    signature: Int,
+    measures: List(Measure),
+  )
 }
 
 pub type Score {
@@ -64,10 +92,8 @@ pub type Score {
     time: #(Int, Int),
     /// The note value durations are counted in: 8 means eighth notes.
     unit: Int,
-    /// The key signature, as a position on the line of fifths.
-    signature: Int,
     tempo: Option(Int),
-    measures: List(Measure),
+    parts: List(Part),
   )
 }
 
@@ -86,7 +112,17 @@ pub fn measure_capacity(score: Score) -> Int {
 }
 
 pub fn events(score: Score) -> List(Event) {
-  list.flat_map(score.measures, fn(one) { one.events })
+  list.flat_map(score.parts, fn(part) {
+    list.flat_map(part.measures, fn(one) { one.events })
+  })
+}
+
+/// The staff a single part score is all about.
+pub fn only_part(score: Score) -> Part {
+  case score.parts {
+    [one, ..] -> one
+    [] -> Part("", Treble, 0, [])
+  }
 }
 
 pub fn pitches(score: Score) -> List(Pitch) {
@@ -153,32 +189,73 @@ pub fn from_line(
   tempo: Int,
 ) -> Score {
   let shift = instrument.write_interval_for_key(player, key)
-  let moved = lick.transpose(line, shift) |> lick.simplify_spelling
-
-  let events =
-    list.flat_map(moved.segments, fn(segment) {
-      let symbol = chord.to_string(segment.chord)
-      list.index_map(segment.events, fn(event, at) {
-        // The chord symbol belongs to the bar it starts, not to every note.
-        let label = case at {
-          0 -> Some(symbol)
-          _ -> None
-        }
-        case event {
-          lick.Tone(note, length, held) ->
-            Note(note, length, None, label, None, Alone, held)
-          lick.Rest(length) -> Rest(length, label, None)
-        }
-      })
-    })
-
   build(
     title: heading,
     subtitle: instrument.label(player),
-    events: events,
+    events: line_events(lick.transpose(line, shift) |> lick.simplify_spelling),
     hint: interval.transpose_class(key, shift),
     tempo: tempo,
   )
+}
+
+/// A line with a written out comp beneath it: the piano on the upper staff at
+/// concert pitch, the part to play on the lower one.
+pub fn from_line_with_backing(
+  line: Line,
+  changes: Progression,
+  heading: String,
+  player: Instrument,
+  tempo: Int,
+) -> Score {
+  let shift = instrument.write_interval_for_key(player, changes.key)
+  let moved = lick.transpose(line, shift) |> lick.simplify_spelling
+
+  let backing =
+    comp.under(changes)
+    |> list.map(fn(one) {
+      Stack(
+        one.notes,
+        one.duration,
+        list.map(one.notes, fn(_) { None }),
+        None,
+        None,
+      )
+    })
+
+  Score(
+    title: heading,
+    subtitle: instrument.label(player),
+    time: #(4, 4),
+    unit: 8,
+    tempo: Some(tempo),
+    parts: [
+      assemble(backing, changes.key, Bass, "Piano"),
+      assemble(
+        line_events(moved),
+        interval.transpose_class(changes.key, shift),
+        Treble,
+        instrument.label(player),
+      ),
+    ],
+  )
+}
+
+fn line_events(moved: Line) -> List(Event) {
+  list.flat_map(moved.segments, fn(segment) {
+    let symbol = chord.to_string(segment.chord)
+    list.index_map(segment.events, fn(event, at) {
+      // The chord symbol belongs to the bar it starts, not to every note.
+      let label = case at {
+        0 -> Some(symbol)
+        _ -> None
+      }
+      case event {
+        lick.Tone(note, length, held) ->
+          Note(note, length, None, label, None, Alone, held)
+        lick.Rest(length) -> Rest(length, label, None)
+      }
+    })
+  })
 }
 
 /// A chord chart: bars carrying symbols and no printed notes.
@@ -209,9 +286,15 @@ pub fn from_progression(
     subtitle: instrument.label(player),
     time: #(4, 4),
     unit: 8,
-    signature: signature_near(moved.key),
     tempo: Some(tempo),
-    measures: measures,
+    parts: [
+      Part(
+        name: instrument.label(player),
+        clef: Treble,
+        signature: signature_near(moved.key),
+        measures: measures,
+      ),
+    ],
   )
 }
 
@@ -288,6 +371,23 @@ fn build(
   hint hint: PitchClass,
   tempo tempo: Int,
 ) -> Score {
+  Score(
+    title: title,
+    subtitle: subtitle,
+    time: #(4, 4),
+    unit: 8,
+    tempo: Some(tempo),
+    parts: [assemble(events, hint, Treble, subtitle)],
+  )
+}
+
+/// Lay events into bars, pick a key signature, work out the accidentals.
+fn assemble(
+  events: List(Event),
+  hint: PitchClass,
+  clef: Clef,
+  name: String,
+) -> Part {
   let capacity = 8
   let measures =
     events
@@ -295,16 +395,7 @@ fn build(
     |> list.map(spell_silences)
     |> list.map(beam_measure(_, capacity))
   let signature = choose_signature(measures, hint)
-
-  Score(
-    title: title,
-    subtitle: subtitle,
-    time: #(4, 4),
-    unit: 8,
-    signature: signature,
-    tempo: Some(tempo),
-    measures: apply_accidentals(measures, signature),
-  )
+  Part(name, clef, signature, apply_accidentals(measures, signature))
 }
 
 /// Fill bars by duration rather than by count, so a held note takes the room
@@ -341,6 +432,7 @@ fn into_measures(
 pub fn duration_of(one: Event) -> Int {
   case one {
     Note(duration: length, ..) -> length
+    Stack(duration: length, ..) -> length
     Rest(duration: length, ..) -> length
     Spacer(duration: length, ..) -> length
   }
@@ -504,6 +596,26 @@ fn accidental_count(measures: List(Measure), signature: Int) -> Int {
 
 // --- Accidentals -------------------------------------------------------------
 
+/// Whether a note needs an accidental written, given what the key signature
+/// and the rest of the bar have already said.
+fn needed(
+  note: Pitch,
+  seen: dict.Dict(#(Int, Int), Int),
+  signature: Int,
+) -> #(Option(Int), dict.Dict(#(Int, Int), Int)) {
+  let letter = note.class.letter
+  let wanted = note.class.alteration
+  let key = #(pitch.diatonic_index(letter), note.octave)
+  let standing = case dict.get(seen, key) {
+    Ok(found) -> found
+    Error(_) -> pitch.key_alteration(letter, signature)
+  }
+  case wanted == standing {
+    True -> #(None, seen)
+    False -> #(Some(wanted), dict.insert(seen, key, wanted))
+  }
+}
+
 /// Decide which accidentals get printed.
 ///
 /// An accidental lasts to the end of its bar at its own octave, so each bar
@@ -516,20 +628,17 @@ fn apply_accidentals(measures: List(Measure), signature: Int) -> List(Measure) {
         let #(done, seen) = state
         case event {
           Note(..) as note -> {
-            let letter = note.pitch.class.letter
-            let wanted = note.pitch.class.alteration
-            let key = #(pitch.diatonic_index(letter), note.pitch.octave)
-            let standing = case dict.get(seen, key) {
-              Ok(found) -> found
-              Error(_) -> pitch.key_alteration(letter, signature)
-            }
-            case wanted == standing {
-              True -> #([Note(..note, accidental: None), ..done], seen)
-              False -> #(
-                [Note(..note, accidental: Some(wanted)), ..done],
-                dict.insert(seen, key, wanted),
-              )
-            }
+            let #(mark, seen) = needed(note.pitch, seen, signature)
+            #([Note(..note, accidental: mark), ..done], seen)
+          }
+          Stack(..) as stack -> {
+            let #(marks, seen) =
+              list.fold(stack.pitches, #([], seen), fn(state, one) {
+                let #(marks, seen) = state
+                let #(mark, seen) = needed(one, seen, signature)
+                #([mark, ..marks], seen)
+              })
+            #([Stack(..stack, accidentals: list.reverse(marks)), ..done], seen)
           }
           other -> #([other, ..done], seen)
         }
