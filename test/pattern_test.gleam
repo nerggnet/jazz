@@ -2,6 +2,7 @@ import gleam/list
 import gleam/option
 import gleam/set
 import gleam/string
+import jazz/chord
 import jazz/instrument
 import jazz/notation
 import jazz/pattern
@@ -148,4 +149,60 @@ pub fn no_key_asks_for_more_than_six_accidentals_test() {
       })
     })
   })
+}
+
+// --- Chords ------------------------------------------------------------------
+
+fn tones(shape: pattern.Arpeggio, text: String) -> List(String) {
+  let assert Ok(subject) = chord.parse(text)
+  spelled(pattern.chord_tones(shape, subject))
+}
+
+pub fn every_arpeggio_is_reachable_by_name_test() {
+  list.each(pattern.arpeggios(), fn(one) {
+    assert pattern.arpeggio_from_string(pattern.arpeggio_id(one)) == Ok(one)
+    assert pattern.arpeggio_name(one) != ""
+    assert pattern.arpeggio_usage(one) != ""
+  })
+  assert pattern.arpeggio_from_string("nope") != Ok(pattern.UpAndDown)
+}
+
+pub fn an_arpeggio_turns_on_its_own_top_note_test() {
+  // A scale turns round on the octave above its root. A chord turns round on
+  // its seventh, because that is the end of the chord and the octave is only
+  // the root again.
+  assert tones(pattern.UpAndDown, "Cmaj7")
+    == ["C4", "E4", "G4", "B4", "G4", "E4", "C4"]
+  assert tones(pattern.FromTheTop, "Cmaj7")
+    == ["B4", "G4", "E4", "C4", "E4", "G4", "B4"]
+}
+
+pub fn inversions_start_from_each_note_in_turn_test() {
+  let notes = tones(pattern.Inversions, "Cmaj7")
+  assert list.take(notes, 8) == ["C4", "E4", "G4", "B4", "E4", "G4", "B4", "C5"]
+  let assert Ok(last) = list.last(notes)
+  assert last == "C4"
+}
+
+pub fn threes_climb_three_at_a_time_test() {
+  assert tones(pattern.Threes, "Cmaj7") |> list.take(6)
+    == ["C4", "E4", "G4", "E4", "G4", "B4"]
+}
+
+pub fn an_arpeggio_never_leaves_the_chord_test() {
+  list.each(
+    ["Cmaj7", "Dm7", "G7b9", "Am7b5", "Ebdim7", "F6", "Bb7#11", "Csus4"],
+    fn(text) {
+      let assert Ok(subject) = chord.parse(text)
+      let inside =
+        set.from_list(list.map(chord.notes(subject), pitch.class_to_string))
+      list.each(pattern.arpeggios(), fn(shape) {
+        let notes = pattern.chord_tones(shape, subject)
+        assert notes != []
+        list.each(notes, fn(one) {
+          assert set.contains(inside, pitch.class_to_string(one.class))
+        })
+      })
+    },
+  )
 }

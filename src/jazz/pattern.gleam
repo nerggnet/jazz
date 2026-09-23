@@ -13,6 +13,7 @@
 
 import gleam/int
 import gleam/list
+import jazz/chord.{type Chord}
 import jazz/internal/num
 import jazz/interval
 import jazz/pitch.{type Pitch, Pitch}
@@ -108,7 +109,7 @@ pub fn notes(one: Pattern, subject: Scale) -> List(Pitch) {
 
 /// Coming down from the note you just went up to would sound it twice, which
 /// is a stumble rather than a turn.
-fn turn(up: List(Pitch), down: List(Pitch)) -> List(Pitch) {
+fn turn(up: List(a), down: List(a)) -> List(a) {
   case list.last(up), down {
     Ok(last), [first, ..rest] if last == first -> rest
     _, _ -> down
@@ -141,5 +142,128 @@ pub fn bars(one: Pattern, subject: Scale) -> Int {
   case int.modulo(length, 8) {
     Ok(0) -> length / 8
     _ -> length / 8 + 1
+  }
+}
+
+// --- Chords ------------------------------------------------------------------
+//
+// The same idea one rung further in. A scale pattern steps through the notes
+// of a scale; an arpeggio pattern steps through the notes of a chord, and the
+// shapes worth practising are different because the ladder is wider.
+
+pub type Arpeggio {
+  /// The chord up and back down.
+  UpAndDown
+  /// The chord from each of its own notes in turn, which is how you come to
+  /// hear it from anywhere rather than only from the root.
+  Inversions
+  /// Down first and back up. The direction everybody neglects.
+  FromTheTop
+  /// Three notes from each rung: one three five, three five seven, and on up.
+  Threes
+}
+
+pub fn arpeggios() -> List(Arpeggio) {
+  [UpAndDown, Inversions, FromTheTop, Threes]
+}
+
+pub fn arpeggio_id(one: Arpeggio) -> String {
+  case one {
+    UpAndDown -> "up-and-down"
+    Inversions -> "inversions"
+    FromTheTop -> "from-the-top"
+    Threes -> "threes"
+  }
+}
+
+pub fn arpeggio_name(one: Arpeggio) -> String {
+  case one {
+    UpAndDown -> "Up and down"
+    Inversions -> "Inversions"
+    FromTheTop -> "From the top"
+    Threes -> "Threes"
+  }
+}
+
+pub fn arpeggio_usage(one: Arpeggio) -> String {
+  case one {
+    UpAndDown -> "The notes of the chord, in order."
+    Inversions -> "The same chord starting from each of its notes."
+    FromTheTop -> "Downwards first, which is the harder way round."
+    Threes -> "One three five, three five seven, and on up."
+  }
+}
+
+pub fn arpeggio_from_string(text: String) -> Result(Arpeggio, String) {
+  case list.find(arpeggios(), fn(one) { arpeggio_id(one) == text }) {
+    Ok(found) -> Ok(found)
+    Error(_) -> Error("unknown arpeggio: " <> text)
+  }
+}
+
+/// The exercise, as notes.
+pub fn chord_tones(one: Arpeggio, subject: Chord) -> List(Pitch) {
+  let size = list.length(chord.intervals(subject))
+  case size <= 0 {
+    True -> []
+    False -> {
+      let up = climb(one, size)
+      list.append(up, turn(up, fall(one, size)))
+      |> list.map(rung(subject, _))
+    }
+  }
+}
+
+/// Which rungs the shape climbs on the way up.
+///
+/// A scale turns round on the octave above its root; a chord turns round on
+/// its own top note, because the seventh is the end of the chord and the
+/// octave is just the root again.
+fn climb(one: Arpeggio, size: Int) -> List(Int) {
+  case one {
+    UpAndDown -> num.counting(size)
+    FromTheTop -> num.counting(size) |> list.reverse
+    Inversions ->
+      num.counting(size)
+      |> list.flat_map(fn(start) {
+        num.counting(size) |> list.map(fn(step) { start + step })
+      })
+    Threes ->
+      num.counting(size)
+      |> list.flat_map(fn(start) { [start, start + 1, start + 2] })
+  }
+}
+
+/// And on the way back.
+fn fall(one: Arpeggio, size: Int) -> List(Int) {
+  case one {
+    UpAndDown -> num.counting(size) |> list.reverse
+    FromTheTop -> num.counting(size)
+    Inversions ->
+      num.counting(size)
+      |> list.reverse
+      |> list.flat_map(fn(start) {
+        num.counting(size) |> list.map(fn(step) { start + size - 1 - step })
+      })
+    Threes ->
+      num.counting(size)
+      |> list.reverse
+      |> list.flat_map(fn(start) { [start + 2, start + 1, start] })
+  }
+}
+
+/// The chord tone a given number of rungs above the root, counting on past
+/// the octave.
+fn rung(subject: Chord, index: Int) -> Pitch {
+  let steps = chord.intervals(subject)
+  let size = list.length(steps)
+  let octave = num.floor_div(index, size)
+  case list.drop(steps, index - octave * size) {
+    [step, ..] ->
+      interval.transpose(
+        interval.transpose(Pitch(subject.root, 4), step),
+        interval.octaves(octave),
+      )
+    [] -> Pitch(subject.root, 4)
   }
 }

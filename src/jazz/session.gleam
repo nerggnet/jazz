@@ -19,7 +19,7 @@ import jazz/internal/random
 import jazz/interval
 import jazz/lick.{type Level}
 import jazz/notation
-import jazz/pattern.{type Pattern}
+import jazz/pattern.{type Arpeggio, type Pattern}
 import jazz/pitch.{type PitchClass}
 import jazz/progression.{type Progression}
 import jazz/render/abc
@@ -42,8 +42,9 @@ pub type Session {
     /// Always the concert key, whatever instrument is selected.
     key: PitchClass,
     kind: ScaleKind,
-    /// Which exercise is made out of the scale.
+    /// Which exercise is made out of the scale, and which out of the chord.
     shape: Pattern,
+    arpeggio: Arpeggio,
     /// Whether an exercise runs through every key or stays in the one on
     /// screen. It means the same thing to a scale and to a line: the cycle
     /// of fourths, which is how either is actually practised.
@@ -83,6 +84,7 @@ pub type Action {
   ChooseKeyNamed(String)
   ChooseScaleNamed(String)
   ChoosePatternNamed(String)
+  ChooseArpeggioNamed(String)
   RoundTheKeys(Bool)
   ChooseLevelNamed(String)
   /// Move round the cycle of fourths: forwards for one, back for minus one.
@@ -115,6 +117,7 @@ pub fn new() -> Session {
     key: pitch.natural(pitch.C),
     kind: scale.Dorian,
     shape: pattern.Straight,
+    arpeggio: pattern.UpAndDown,
     round_the_keys: False,
     chord_text: "Bb7#9",
     changes_text: "Dm7 G7 Cmaj7",
@@ -193,6 +196,11 @@ pub fn update(session: Session, action: Action) -> Session {
     ChoosePatternNamed(name) ->
       case pattern.from_string(name) {
         Ok(shape) -> Session(..session, shape: shape)
+        Error(_) -> session
+      }
+    ChooseArpeggioNamed(name) ->
+      case pattern.arpeggio_from_string(name) {
+        Ok(shape) -> Session(..session, arpeggio: shape)
         Error(_) -> session
       }
     ChooseTempoNamed(name) ->
@@ -327,14 +335,25 @@ fn showing(session: Session) -> Result(#(String, notation.Score), String) {
     ChordView ->
       case chord.parse(session.chord_text) {
         Error(message) -> Error(message)
-        Ok(subject) ->
+        Ok(subject) -> {
+          let keys = case session.round_the_keys {
+            False -> [subject.root]
+            True -> progression.cycle_of_fourths(subject.root)
+          }
           Ok(#(
-            text.chord_view(subject, session.player),
+            text.chord_view(subject, session.arpeggio, keys, session.player),
             marked(
               session,
-              notation.from_chord(subject, session.player, session.tempo),
+              notation.from_arpeggio(
+                subject,
+                session.arpeggio,
+                keys,
+                session.player,
+                session.tempo,
+              ),
             ),
           ))
+        }
       }
 
     ProgressionView ->

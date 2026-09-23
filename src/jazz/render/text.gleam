@@ -14,7 +14,7 @@ import jazz/chord.{type Chord}
 import jazz/instrument.{type Instrument}
 import jazz/interval.{type Interval}
 import jazz/lick.{type Line, type Segment}
-import jazz/pattern.{type Pattern}
+import jazz/pattern.{type Arpeggio, type Pattern}
 import jazz/pitch.{type PitchClass}
 import jazz/progression.{type Progression}
 import jazz/scale.{type Scale}
@@ -73,6 +73,20 @@ pub fn scale_view(
   )
 }
 
+/// And the same for a chord.
+fn exercise_over(shape: Arpeggio, keys: List(PitchClass)) -> String {
+  pattern.arpeggio_name(shape)
+  <> ".  "
+  <> pattern.arpeggio_usage(shape)
+  <> case keys {
+    [_] -> ""
+    _ ->
+      "  Round the keys: "
+      <> string.join(list.map(keys, pitch.class_to_string), " ")
+      <> "."
+  }
+}
+
 /// What is actually being practised, under the scale it is built from.
 fn exercise(shape: Pattern, keys: List(PitchClass)) -> String {
   pattern.name(shape)
@@ -89,7 +103,12 @@ fn exercise(shape: Pattern, keys: List(PitchClass)) -> String {
 
 // --- Chords ------------------------------------------------------------------
 
-pub fn chord_view(subject: Chord, instrument: Instrument) -> String {
+pub fn chord_view(
+  subject: Chord,
+  shape: Arpeggio,
+  keys: List(PitchClass),
+  instrument: Instrument,
+) -> String {
   let shift = instrument.write_interval_for_key(instrument, subject.root)
   let written_chord = chord.transpose(subject, shift)
   let concert = list.map(chord.notes(subject), pitch.class_to_string)
@@ -136,7 +155,10 @@ pub fn chord_view(subject: Chord, instrument: Instrument) -> String {
         <> string.join(list.map(guides, pitch.class_to_string), "  "),
       "",
       indent <> "Scales that fit, best first:",
-      ..list.map(scales, fn(name) { indent <> indent <> name })
+      ..list.append(list.map(scales, fn(name) { indent <> indent <> name }), [
+        "",
+        indent <> exercise_over(shape, keys),
+      ])
     ],
     "\n",
   )

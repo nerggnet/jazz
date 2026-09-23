@@ -24,7 +24,7 @@ import jazz/instrument.{type Instrument}
 import jazz/internal/num
 import jazz/interval.{type Interval}
 import jazz/lick.{type Line}
-import jazz/pattern.{type Pattern}
+import jazz/pattern.{type Arpeggio, type Pattern}
 import jazz/pitch.{type Pitch, type PitchClass, Pitch}
 import jazz/progression.{type Progression}
 import jazz/scale.{type Scale, type ScaleKind}
@@ -356,25 +356,67 @@ fn bar_out(events: List(Event)) -> List(Event) {
 
 /// A chord, spelled out as an arpeggio up and back down.
 pub fn from_chord(subject: Chord, player: Instrument, tempo: Int) -> Score {
-  let shift = instrument.write_interval_for_key(player, subject.root)
-  let root = Pitch(subject.root, 4)
-  let up =
-    chord.intervals(subject)
-    |> list.map(fn(step) { interval.transpose(root, step) })
-  let notes = list.append(up, back_down(up))
-  let written_chord = chord.transpose(subject, shift)
-  let symbol = chord.to_string(written_chord)
+  from_arpeggio(subject, pattern.UpAndDown, [subject.root], player, tempo)
+}
 
-  build(
-    title: symbol,
+/// An arpeggio pattern over one chord or over the same chord in every key.
+pub fn from_arpeggio(
+  subject: Chord,
+  shape: Arpeggio,
+  keys: List(PitchClass),
+  player: Instrument,
+  tempo: Int,
+) -> Score {
+  let sections =
+    list.map(keys, fn(key) {
+      let here =
+        chord.transpose(
+          subject,
+          interval.between(Pitch(subject.root, 4), Pitch(key, 4))
+            |> interval.simple,
+        )
+      spelled(key, player, list.length(keys) == 1, fn(shift) {
+        plain(
+          hold_last(
+            eighths(written(pattern.chord_tones(shape, here), shift, player)),
+          ),
+          [#(0, chord.to_string(chord.transpose(here, shift)))],
+        )
+      })
+    })
+
+  let written_root = case sections {
+    [#(key, _, _), ..] -> key
+    [] -> subject.root
+  }
+
+  Score(
+    title: pitch.class_to_string(written_root)
+      <> chord.quality_string(subject)
+      <> case shape {
+      pattern.UpAndDown -> ""
+      _ -> ", " <> string.lowercase(pattern.arpeggio_name(shape))
+    }
+      <> case keys {
+      [_] -> ""
+      _ -> ", round the keys"
+    },
     subtitle: instrument.label(player),
-    events: plain(hold_last(eighths(written(notes, shift, player))), [
-      #(0, symbol),
-    ]),
-    hint: written_chord.root,
-    tempo: tempo,
-    sound: instrument.sound(player),
-    shift: shift,
+    time: #(4, 4),
+    unit: 8,
+    tempo: Some(tempo),
+    feel: None,
+    parts: [
+      reading(
+        keyed(
+          sections,
+          Treble,
+          instrument.label(player),
+          instrument.sound(player),
+        ),
+        instrument.write_interval_for_key(player, subject.root),
+      ),
+    ],
   )
 }
 
@@ -616,13 +658,6 @@ pub fn from_progression(
 // --- Putting the pieces together --------------------------------------------
 
 /// Everything above the bottom note again, on the way back down.
-fn back_down(up: List(Pitch)) -> List(Pitch) {
-  case list.reverse(up) {
-    [_, ..rest] -> rest
-    [] -> []
-  }
-}
-
 fn eighths(notes: List(Pitch)) -> List(#(Pitch, Int)) {
   list.map(notes, fn(one) { #(one, 1) })
 }

@@ -387,3 +387,18 @@ pub fn a_line_goes_round_the_keys_too_test() {
   assert string.contains(plain, "V:2 clef=bass")
   assert !string.contains(twelve, "V:")
 }
+
+pub fn a_chord_gets_the_same_treatment_as_a_scale_test() {
+  // The Chord view had one exercise in it while the Scale view had six and
+  // a cycle of keys. It has both now, from the same switches.
+  let plain = showing(session.ChordView)
+  let shaped = session.update(plain, session.ChooseArpeggioNamed("inversions"))
+  assert string.contains(text_of(shaped), "Inversions")
+  assert string.contains(abc_of(shaped), "inversions")
+  assert string.length(abc_of(shaped)) > string.length(abc_of(plain))
+
+  let round = session.update(shaped, session.RoundTheKeys(True))
+  assert string.contains(abc_of(round), "round the keys")
+  assert string.contains(abc_of(round), "[K:")
+  assert string.contains(text_of(round), "Round the keys:")
+}

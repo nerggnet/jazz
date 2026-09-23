@@ -157,7 +157,7 @@ fn controls(model: Model) -> Element(Msg) {
       patterns(model),
       all_keys(model),
     ]
-    session.ChordView -> [chord_box(model)]
+    session.ChordView -> [chord_box(model), arpeggios(model), all_keys(model)]
     session.ProgressionView -> source(model, [])
     session.LineView ->
       case session.generating_tune(model.session) {
@@ -268,8 +268,27 @@ fn patterns(model: Model) -> Element(Msg) {
   )
 }
 
-/// The same thing round the cycle of fourths, which is how a scale pattern
-/// and a lick are both actually practised once they are under the fingers.
+fn arpeggios(model: Model) -> Element(Msg) {
+  field(
+    "Pattern",
+    html.select(
+      [event.on_change(fn(name) { Did(session.ChooseArpeggioNamed(name)) })],
+      list.map(pattern.arpeggios(), fn(one) {
+        html.option(
+          [
+            attribute.value(pattern.arpeggio_id(one)),
+            attribute.selected(one == model.session.arpeggio),
+          ],
+          pattern.arpeggio_name(one),
+        )
+      }),
+    ),
+  )
+}
+
+/// The same thing round the cycle of fourths, which is how a scale pattern,
+/// an arpeggio and a lick are all actually practised once they are under the
+/// fingers.
 fn all_keys(model: Model) -> Element(Msg) {
   field(
     "Keys",
