@@ -451,3 +451,12 @@ gleam test --target javascript
 gleam run -m lustre/dev build jazz_web --no-html --outdir=dist
 cp web/index.html web/styles.css dist/
 ```
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Both compilation targets have to pass,
+and musical claims are expected to come with a test that measures them.
+
+## Licence
+
+MIT. See [LICENSE](LICENSE).
