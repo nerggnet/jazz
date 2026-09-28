@@ -468,3 +468,53 @@ pub fn the_sounds_a_horn_can_need_are_known_up_front_test() {
     })
   })
 }
+
+// --- The chords a scale carries ----------------------------------------------
+
+fn harmonising(flavour: String) -> session.Session {
+  session.update(
+    showing(session.ScaleView),
+    session.ChooseFlavourNamed(flavour),
+  )
+}
+
+pub fn the_scale_view_can_show_chords_instead_of_an_exercise_test() {
+  let exercise = showing(session.ScaleView)
+  let chords = harmonising("sevenths")
+  assert session.showing_chords(chords)
+  assert !session.showing_chords(exercise)
+  // The default scale is C Dorian, so the chords are the ones C Dorian
+  // carries, written for the alto that is selected.
+  assert string.contains(text_of(chords), "Am7")
+  assert string.contains(abc_of(chords), "\"Am7\"")
+  // And what is on screen is a chart rather than the scale to play.
+  assert text_of(chords) != text_of(exercise)
+}
+
+pub fn asking_for_no_chords_gives_the_scale_back_test() {
+  let there_and_back =
+    session.update(
+      harmonising("triads"),
+      session.ChooseFlavourNamed(session.plain),
+    )
+  assert !session.showing_chords(there_and_back)
+  assert text_of(there_and_back) == text_of(showing(session.ScaleView))
+}
+
+pub fn a_flavour_nobody_offers_leaves_the_session_alone_test() {
+  // The same rule as every other picker: an answer that means nothing is not
+  // an answer that breaks the page.
+  let nonsense = harmonising("ninths and things")
+  assert !session.showing_chords(nonsense)
+}
+
+pub fn chords_round_the_keys_are_one_chart_test() {
+  let round = session.update(harmonising("triads"), session.RoundTheKeys(True))
+  let abc = abc_of(round)
+  // One tune with twelve keys' worth of bars in it, rather than twelve tunes:
+  // the cycle is the exercise, so it runs on without stopping.
+  assert string.contains(abc, "X:1")
+  assert !string.contains(abc, "X:2")
+  // And the readout says what to play in each of them.
+  assert list.length(string.split(text_of(round), "Triads.")) == 13
+}

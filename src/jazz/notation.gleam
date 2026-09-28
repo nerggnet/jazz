@@ -617,42 +617,69 @@ pub fn from_progression(
   player: Instrument,
   tempo: Int,
 ) -> Score {
-  let shift = instrument.write_interval_for_key(player, subject.key)
-  let moved = progression.transpose(subject, shift)
-  let capacity = 8
+  from_progressions([subject], player, tempo)
+}
 
-  let measures =
-    list.map(moved.bars, fn(one) {
-      Measure(
-        None,
-        events: list.zip(
-          one.chords,
-          progression.shares(list.length(one.chords), capacity),
-        )
-          |> list.map(fn(entry) {
-            Spacer(entry.1, Some(chord.to_string(entry.0)), None)
-          }),
-      )
+/// The same changes in several keys, running on as one chart with the key
+/// signature changing as it goes, which is what practising something round
+/// the cycle actually looks like on paper.
+pub fn from_progressions(
+  subjects: List(Progression),
+  player: Instrument,
+  tempo: Int,
+) -> Score {
+  let sections =
+    list.map(subjects, fn(subject) {
+      let shift = instrument.write_interval_for_key(player, subject.key)
+      let moved = progression.transpose(subject, shift)
+      #(moved.key, signature_near(moved.key), chart(moved))
     })
 
+  let heading = case subjects, sections {
+    [first, ..], [#(written, _, _), ..] ->
+      first.name <> " in " <> pitch.class_to_string(written)
+    _, _ -> ""
+  }
+  let home = case subjects {
+    [first, ..] -> first.key
+    [] -> pitch.natural(pitch.C)
+  }
+
   Score(
-    title: moved.name <> " in " <> pitch.class_to_string(moved.key),
+    title: heading
+      <> case subjects {
+      [] | [_] -> ""
+      _ -> ", round the keys"
+    },
     subtitle: instrument.label(player),
     time: #(4, 4),
     unit: 8,
     tempo: Some(tempo),
     feel: None,
     parts: [
-      Part(
-        name: instrument.label(player),
-        clef: Treble,
-        sound: instrument.piano,
-        signature: signature_near(moved.key),
-        transpose: Some(interval.negate(shift)),
-        measures: measures,
+      reading(
+        keyed(sections, Treble, instrument.label(player), instrument.piano),
+        instrument.write_interval_for_key(player, home),
       ),
     ],
   )
+}
+
+/// One bar to a bar, carrying symbols and no printed notes.
+fn chart(moved: Progression) -> List(Measure) {
+  let capacity = 8
+  list.map(moved.bars, fn(one) {
+    Measure(None, events: case one.chords {
+      // A bar with nothing in it is still a bar, and has to be filled or the
+      // score does not add up.
+      [] -> [Spacer(capacity, None, None)]
+      chords ->
+        list.zip(chords, progression.shares(list.length(chords), capacity))
+        |> list.map(fn(entry) {
+          Spacer(entry.1, Some(chord.to_string(entry.0)), None)
+        })
+    })
+  })
 }
 
 // --- Putting the pieces together --------------------------------------------

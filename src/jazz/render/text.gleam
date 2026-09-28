@@ -11,6 +11,7 @@ import gleam/option
 import gleam/string
 import jazz/analysis.{type Finding}
 import jazz/chord.{type Chord}
+import jazz/harmony.{type Flavour}
 import jazz/instrument.{type Instrument}
 import jazz/interval.{type Interval}
 import jazz/lick.{type Line, type Segment}
@@ -162,6 +163,94 @@ pub fn chord_view(
     ],
     "\n",
   )
+}
+
+// --- The chords in a scale ---------------------------------------------------
+
+/// Which chords the scale will carry, and what each one is called.
+///
+/// The degree column is the chord's place in the scale rather than in a key,
+/// so the tonic chord is always the first one and always numbered one.
+pub fn harmony_view(
+  subject: Scale,
+  flavour: Flavour,
+  instrument: Instrument,
+) -> String {
+  let shift = instrument.write_interval_for_key(instrument, subject.root)
+  let written_root = interval.transpose_class(subject.root, shift)
+  let transposing = !instrument.is_concert(instrument)
+
+  let heading = case transposing {
+    False ->
+      pitch.class_to_string(subject.root) <> " " <> scale.name(subject.kind)
+    True ->
+      pitch.class_to_string(written_root)
+      <> " "
+      <> scale.name(subject.kind)
+      <> "  (concert "
+      <> pitch.class_to_string(subject.root)
+      <> ")"
+  }
+
+  let rows =
+    harmony.chords(subject, flavour)
+    |> list.map(fn(one) {
+      let written = chord.transpose(one, shift)
+      #(
+        progression.numeral(subject.root, one),
+        chord.to_string(written),
+        string.join(list.map(chord.notes(written), pitch.class_to_string), "  "),
+        case transposing {
+          True -> chord.to_string(one)
+          False -> ""
+        },
+      )
+    })
+
+  let body = case rows {
+    [] -> [
+      indent
+      <> "Nothing here carries "
+      <> string.lowercase(harmony.name(flavour))
+      <> ". The scale has too few notes, or the wrong ones.",
+    ]
+    _ -> {
+      let header = #("Degree", "Chord", "Notes", case transposing {
+        True -> "Concert"
+        False -> ""
+      })
+      let all = [header, ..rows]
+      let degrees = width(list.map(all, fn(row) { row.0 }))
+      let symbols = width(list.map(all, fn(row) { row.1 }))
+      let notes = width(list.map(all, fn(row) { row.2 }))
+      list.map(all, fn(row) {
+        string.trim_end(
+          indent
+          <> string.pad_end(row.0, degrees + 2, " ")
+          <> string.pad_end(row.1, symbols + 2, " ")
+          <> string.pad_end(row.2, notes + 2, " ")
+          <> row.3,
+        )
+      })
+    }
+  }
+
+  string.join(
+    list.flatten([
+      [
+        title(heading, instrument),
+        "",
+        indent <> harmony.name(flavour) <> ".  " <> harmony.usage(flavour),
+        "",
+      ],
+      body,
+    ]),
+    "\n",
+  )
+}
+
+fn width(cells: List(String)) -> Int {
+  list.fold(cells, 0, fn(widest, cell) { int.max(widest, string.length(cell)) })
 }
 
 // --- Progressions ------------------------------------------------------------
@@ -555,6 +644,17 @@ pub fn instrument_listing() -> String {
     <> pitch.to_string(entry.lowest_written)
     <> " to "
     <> pitch.to_string(entry.highest_written)
+  })
+  |> string.join("\n")
+}
+
+pub fn flavour_listing() -> String {
+  harmony.all_flavours()
+  |> list.map(fn(one) {
+    indent
+    <> string.pad_end(harmony.id(one), 12, " ")
+    <> string.pad_end(harmony.name(one), 18, " ")
+    <> harmony.usage(one)
   })
   |> string.join("\n")
 }

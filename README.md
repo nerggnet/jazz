@@ -8,6 +8,7 @@ B-flat instruments.
 
 ```sh
 gleam run -- scale D dorian --for alto
+gleam run -- scale D dorian --chords sevenths
 gleam run -- chord Bb7#9 --for tenor
 gleam run -- progression blues --key Bb --for tenor
 gleam run -- lick ii-V-I --key F --for alto --format abc
@@ -66,6 +67,62 @@ know: `CM7` is major, `Cm7` is minor.
 chord from each of its own notes in turn, `from-the-top` goes down first, and
 `threes` climbs one-three-five, three-five-seven, and on up. With `--all-keys`
 any of them runs round the cycle.
+
+### The chords a scale carries
+
+The chord view answers the question a chart asks: here is a chord, what do I
+play over it. `--chords` asks it the other way round, which is the question a
+player asks with a scale already under their fingers and nothing to use it on:
+
+```
+$ gleam run -- scale D dorian --chords sevenths --for tenor
+
+  E Dorian  (concert D)  --  Tenor sax (Bb)
+
+  Sevenths.  Four-part harmony: the chords a chart is written in.
+
+  Degree  Chord   Notes         Concert
+  i       Em7     E  G  B  D    Dm7
+  ii      F#m7    F#  A  C#  E  Em7
+  bIII    Gmaj7   G  B  D  F#   Fmaj7
+  IV      A7      A  C#  E  G   G7
+  v       Bm7     B  D  F#  A   Am7
+  vi      C#m7b5  C#  E  G  B   Bm7b5
+  bVII    Dmaj7   D  F#  A  C#  Cmaj7
+```
+
+There is no table of harmonised scales behind that, for the same reason there
+is no table of note names: a chord fits a scale when every note of it is in the
+scale, so the list falls out of trying the shapes of a flavour on every note
+the scale has. `jazz list flavours` shows them — `triads`, `sevenths`,
+`sixths`, `extended` and `suspended` — and each is a different sound rather
+than a different amount of theory. Ask melodic minor for its extended chords
+and the reason anybody practises it is the last line:
+
+```
+$ gleam run -- scale C melodic-minor --chords extended
+
+  Degree  Chord     Notes
+  i       Cm(maj9)  C  Eb  G  B  D
+  IV      F9        F  A  C  Eb  G
+  IV      F13       F  A  C  Eb  G  D
+  IV      F13#11    F  A  C  Eb  G  B  D
+  ...
+  VII     B7alt     B  D#  A  C  C##  E#  G
+```
+
+Because it is generated rather than looked up, it is honest about scales that
+are not seven notes. The whole tone scale gives an augmented dominant on every
+degree and two augmented triads in all, the diminished scale gives dim7 and
+7b9 everywhere, and the blues scale carries a minor seventh and nothing taller
+— which it says, rather than inventing something. A symmetric chord turns up
+on several notes of the scale and is the same chord each time, so it is listed
+once, spelled the way that needs the fewest accidentals: `Bdim7` rather than
+the `Abdim7` that would have to be written `Ab Cb Ebb Gbb`.
+
+`--all-keys` runs the whole thing round the cycle, and with `--format abc` or
+`--format musicxml` it comes out as a chart to read and play against rather
+than a table to look at.
 
 ### Progressions
 
@@ -427,6 +484,7 @@ share everything behind.
 | `jazz/instrument` | Transposing instruments, their ranges, concert vs written |
 | `jazz/scale` | Scale formulas, names, and what each one is for |
 | `jazz/chord` | Chord symbols in and out, chord-scale suggestions |
+| `jazz/harmony` | The chords a scale carries, in a handful of flavours |
 | `jazz/progression` | Progressions built from degrees, and changes read off a chart |
 | `jazz/tune` | Making up changes, from the cells the analyser knows how to find |
 | `jazz/lick` | Line generation: targets, approaches and connective devices |

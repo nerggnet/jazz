@@ -12,6 +12,7 @@ import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleam/string
 import jazz/chord
+import jazz/harmony.{type Flavour}
 import jazz/instrument.{type Instrument}
 import jazz/lick
 import jazz/notation
@@ -57,35 +58,11 @@ fn scale_command(args: List(String)) -> Result(String, String) {
   use format <- result.try(format_option(options))
   use beats <- result.try(tempo_option(options))
   use shape <- result.try(pattern_option(options))
+  use flavour <- result.try(flavour_option(options))
   let draw = fn(subjects) {
-    case format {
-      Text ->
-        subjects
-        |> list.map(fn(one: scale.Scale) {
-          text.scale_view(one, shape, [one.root], player)
-        })
-        |> string.join("\n\n")
-      Abc ->
-        subjects
-        |> list.map(fn(one: scale.Scale) {
-          notation.from_pattern(one, shape, [one.root], player, beats)
-        })
-        |> abc.render_book
-      // A MusicXML file holds one score, so the keys go into one score
-      // rather than into a book of them: same music, and a notation program
-      // will open it.
-      MusicXml ->
-        case subjects {
-          [] -> ""
-          [first, ..] as all ->
-            musicxml.render(notation.from_pattern(
-              first,
-              shape,
-              list.map(all, fn(one: scale.Scale) { one.root }),
-              player,
-              beats,
-            ))
-        }
+    case flavour {
+      Some(chosen) -> harmonised(subjects, chosen, player, format, beats)
+      None -> practised(subjects, shape, player, format, beats)
     }
   }
   case options.positional {
@@ -104,8 +81,77 @@ fn scale_command(args: List(String)) -> Result(String, String) {
     }
     _ ->
       Error(
-        "usage: jazz scale <root> <scale> [--for <instrument>] [--pattern <pattern>]",
+        "usage: jazz scale <root> <scale> [--for <instrument>] [--pattern <pattern>] [--chords <flavour>]",
       )
+  }
+}
+
+/// The scale as an exercise to play.
+fn practised(
+  subjects: List(scale.Scale),
+  shape: Pattern,
+  player: Instrument,
+  format: Format,
+  beats: Int,
+) -> String {
+  case format {
+    Text ->
+      subjects
+      |> list.map(fn(one: scale.Scale) {
+        text.scale_view(one, shape, [one.root], player)
+      })
+      |> string.join("\n\n")
+    Abc ->
+      subjects
+      |> list.map(fn(one: scale.Scale) {
+        notation.from_pattern(one, shape, [one.root], player, beats)
+      })
+      |> abc.render_book
+    // A MusicXML file holds one score, so the keys go into one score
+    // rather than into a book of them: same music, and a notation program
+    // will open it.
+    MusicXml ->
+      case subjects {
+        [] -> ""
+        [first, ..] as all ->
+          musicxml.render(notation.from_pattern(
+            first,
+            shape,
+            list.map(all, fn(one: scale.Scale) { one.root }),
+            player,
+            beats,
+          ))
+      }
+  }
+}
+
+/// The chords the scale will carry, as a chart.
+///
+/// One score for MusicXML, because a MusicXML file holds one score: round the
+/// keys, the charts run on one after another rather than into twelve files.
+fn harmonised(
+  subjects: List(scale.Scale),
+  flavour: Flavour,
+  player: Instrument,
+  format: Format,
+  beats: Int,
+) -> String {
+  case format {
+    Text ->
+      subjects
+      |> list.map(text.harmony_view(_, flavour, player))
+      |> string.join("\n\n")
+    Abc ->
+      subjects
+      |> list.map(harmony.as_progression(_, flavour))
+      |> list.map(notation.from_progression(_, player, beats))
+      |> abc.render_book
+    MusicXml ->
+      musicxml.render(notation.from_progressions(
+        list.map(subjects, harmony.as_progression(_, flavour)),
+        player,
+        beats,
+      ))
   }
 }
 
@@ -402,9 +448,10 @@ fn transpose_command(args: List(String)) -> Result(String, String) {
 fn list_command(args: List(String)) -> Result(String, String) {
   case args {
     ["scales"] -> Ok(text.scale_listing())
+    ["flavours"] | ["flavors"] | ["chords"] -> Ok(text.flavour_listing())
     ["instruments"] -> Ok(text.instrument_listing())
     ["progressions"] -> Ok(text.progression_listing())
-    _ -> Error("usage: jazz list scales|instruments|progressions")
+    _ -> Error("usage: jazz list scales|instruments|progressions|flavours")
   }
 }
 
@@ -470,6 +517,14 @@ fn tempo_option(options: Options) -> Result(Int, String) {
   }
 }
 
+/// Which chords to draw out of a scale, if any were asked for.
+fn flavour_option(options: Options) -> Result(Option(Flavour), String) {
+  case flag(options, "chords") {
+    None -> Ok(None)
+    Some(name) -> result.map(harmony.flavour_from_string(name), Some)
+  }
+}
+
 /// The chord view reads the same flag, from its own list of shapes.
 fn arpeggio_option(options: Options) -> Result(Arpeggio, String) {
   case flag(options, "pattern") {
@@ -530,7 +585,7 @@ USAGE
   jazz lick <progression|changes|tune> [options]
   jazz analyse <progression|changes|tune> [options]
   jazz transpose <notes...> --from <instrument> --to <instrument>
-  jazz list scales|instruments|progressions
+  jazz list scales|instruments|progressions|flavours
 
 OPTIONS
   --for, -f <instrument>   Write the part for this instrument (default: concert)
@@ -539,6 +594,8 @@ OPTIONS
   --pattern <pattern>      scales: straight (default), thirds, fourths,
                            triads, sevenths, digital; chords: up-and-down
                            (default), inversions, from-the-top, threes
+  --chords <flavour>       scales: the chords the scale carries, as triads,
+                           sevenths, sixths, extended or suspended
   --level <level>          beginner (default), intermediate, or advanced
   --seed <n>               Pick a different line; the same seed always repeats
   --format <format>        text (default), abc, or musicxml
@@ -551,6 +608,8 @@ EXAMPLES
   jazz scale D dorian --for alto
   jazz scale C bebop-dominant --for tenor --all-keys
   jazz scale F dorian --for alto --pattern thirds
+  jazz scale D dorian --chords sevenths
+  jazz scale C melodic-minor --chords extended --for tenor
   jazz chord Bb7#9 --for tenor
   jazz chord Cmaj7 --for alto --pattern inversions --all-keys
   jazz progression ii-V-I --key F --for alto

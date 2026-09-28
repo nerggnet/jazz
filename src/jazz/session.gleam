@@ -11,9 +11,10 @@
 
 import gleam/int
 import gleam/list
-import gleam/option.{None, Some}
+import gleam/option.{type Option, None, Some}
 import gleam/string
 import jazz/chord
+import jazz/harmony.{type Flavour}
 import jazz/instrument.{type Instrument}
 import jazz/internal/random
 import jazz/interval
@@ -45,6 +46,9 @@ pub type Session {
     /// Which exercise is made out of the scale, and which out of the chord.
     shape: Pattern,
     arpeggio: Arpeggio,
+    /// Chords drawn out of the scale instead of an exercise made from it,
+    /// when one is asked for. `None` is the scale itself.
+    flavour: Option(Flavour),
     /// Whether an exercise runs through every key or stays in the one on
     /// screen. It means the same thing to a scale and to a line: the cycle
     /// of fourths, which is how either is actually practised.
@@ -85,6 +89,9 @@ pub type Action {
   ChooseScaleNamed(String)
   ChoosePatternNamed(String)
   ChooseArpeggioNamed(String)
+  /// The name of a flavour, or anything else at all for "no chords, just the
+  /// scale".
+  ChooseFlavourNamed(String)
   RoundTheKeys(Bool)
   ChooseLevelNamed(String)
   /// Move round the cycle of fourths: forwards for one, back for minus one.
@@ -121,6 +128,7 @@ pub fn new() -> Session {
     kind: scale.Dorian,
     shape: pattern.Straight,
     arpeggio: pattern.UpAndDown,
+    flavour: None,
     round_the_keys: False,
     chord_text: "Bb7#9",
     changes_text: "Dm7 G7 Cmaj7",
@@ -218,6 +226,11 @@ pub fn update(session: Session, action: Action) -> Session {
         Ok(shape) -> Session(..session, arpeggio: shape)
         Error(_) -> session
       }
+    ChooseFlavourNamed(name) ->
+      Session(
+        ..session,
+        flavour: option.from_result(harmony.flavour_from_string(name)),
+      )
     ChooseTempoNamed(name) ->
       case int.parse(name) {
         Ok(beats) if beats >= 20 && beats <= 400 ->
@@ -370,19 +383,42 @@ fn showing(session: Session) -> Result(#(String, notation.Score), String) {
     ScaleView -> {
       let subject = scale.Scale(session.key, session.kind)
       let keys = practice_keys(session)
-      Ok(#(
-        text.scale_view(subject, session.shape, keys, session.player),
-        marked(
-          session,
-          notation.from_pattern(
-            subject,
-            session.shape,
-            keys,
-            session.player,
-            session.tempo,
-          ),
-        ),
-      ))
+      case session.flavour {
+        // The chords the scale carries, as a chart: one bar each, and round
+        // the keys they run on from one key to the next rather than starting
+        // a new chart twelve times.
+        Some(flavour) -> {
+          let subjects =
+            list.map(keys, fn(key) { scale.Scale(key, session.kind) })
+          Ok(#(
+            subjects
+              |> list.map(text.harmony_view(_, flavour, session.player))
+              |> string.join("\n\n"),
+            marked(
+              session,
+              notation.from_progressions(
+                list.map(subjects, harmony.as_progression(_, flavour)),
+                session.player,
+                session.tempo,
+              ),
+            ),
+          ))
+        }
+        None ->
+          Ok(#(
+            text.scale_view(subject, session.shape, keys, session.player),
+            marked(
+              session,
+              notation.from_pattern(
+                subject,
+                session.shape,
+                keys,
+                session.player,
+                session.tempo,
+              ),
+            ),
+          ))
+      }
     }
 
     ChordView ->
@@ -553,6 +589,16 @@ pub fn uses_key(session: Session) -> Bool {
     ProgressionView | LineView | AnalysisView -> !typing_changes(session)
     ChordView -> False
   }
+}
+
+/// The name a front end hands back for "no chords, just the scale". Anything
+/// that is not a flavour would do; this is the one that reads.
+pub const plain = "none"
+
+/// Whether the scale view is showing chords rather than an exercise, which is
+/// what decides whether a pattern picker has anything to say.
+pub fn showing_chords(session: Session) -> Bool {
+  session.view == ScaleView && session.flavour != None
 }
 
 /// Whether the current view is generated, and so can be asked for another.

@@ -454,6 +454,12 @@ pub fn transpose(
 
 /// The roman numeral for a chord in a key, such as `iim7`, `V7` or `bVII7`.
 pub fn roman(key: PitchClass, of: Chord) -> String {
+  numeral(key, of) <> chord.quality_string(of)
+}
+
+/// Just the degree part of the numeral, without the quality: `ii`, `V`,
+/// `bVII`. Useful where the chord symbol is already in the next column.
+pub fn numeral(key: PitchClass, of: Chord) -> String {
   let steps =
     num.modulo(
       pitch.diatonic_position(Pitch(of.root, 4))
@@ -471,7 +477,7 @@ pub fn roman(key: PitchClass, of: Chord) -> String {
     MinorTriad | DiminishedTriad -> string.lowercase(numeral_of(steps))
     _ -> numeral_of(steps)
   }
-  pitch.accidental_to_string(alteration) <> numeral <> chord.quality_string(of)
+  pitch.accidental_to_string(alteration) <> numeral
 }
 
 fn wrap_alteration(alteration: Int) -> Int {

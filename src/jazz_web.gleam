@@ -7,6 +7,8 @@
 
 import gleam/int
 import gleam/list
+import gleam/option.{None, Some}
+import jazz/harmony
 import jazz/instrument
 import jazz/lick
 import jazz/pattern
@@ -170,12 +172,17 @@ fn tabs(model: Model) -> Element(Msg) {
 fn controls(model: Model) -> Element(Msg) {
   let shared = [instruments(model), tempos(model)]
   let particular = case model.session.view {
-    session.ScaleView -> [
-      keys(model),
-      scales(model),
-      patterns(model),
-      all_keys(model),
-    ]
+    // The pattern picker has nothing to say once the scale is being
+    // harmonised rather than played, so it gives up its place.
+    session.ScaleView ->
+      list.flatten([
+        [keys(model), scales(model)],
+        case session.showing_chords(model.session) {
+          True -> []
+          False -> [patterns(model)]
+        },
+        [flavours(model), all_keys(model)],
+      ])
     session.ChordView -> [chord_box(model), arpeggios(model), all_keys(model)]
     session.ProgressionView -> source(model, [])
     session.LineView ->
@@ -295,6 +302,36 @@ fn patterns(model: Model) -> Element(Msg) {
           pattern.name(one),
         )
       }),
+    ),
+  )
+}
+
+/// Which chords to draw out of the scale, if any. The first entry is the
+/// scale on its own, which is what the view was before there were chords in
+/// it and what it goes back to.
+fn flavours(model: Model) -> Element(Msg) {
+  field(
+    "Chords",
+    html.select(
+      [event.on_change(fn(name) { Did(session.ChooseFlavourNamed(name)) })],
+      [
+        html.option(
+          [
+            attribute.value(session.plain),
+            attribute.selected(model.session.flavour == None),
+          ],
+          "None",
+        ),
+        ..list.map(harmony.all_flavours(), fn(one) {
+          html.option(
+            [
+              attribute.value(harmony.id(one)),
+              attribute.selected(model.session.flavour == Some(one)),
+            ],
+            harmony.name(one),
+          )
+        })
+      ],
     ),
   )
 }
