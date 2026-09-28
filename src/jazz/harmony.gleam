@@ -111,6 +111,22 @@ pub fn as_progression(subject: Scale, flavour: Flavour) -> Progression {
   )
 }
 
+/// The scale a chord is played on, as a scale.
+///
+/// `jazz/chord` names two or three that fit and puts them in order; this is
+/// the first of them, which it put first for a reason. Harmonising it is how
+/// a chord answers the question a scale answers: not only what to play over
+/// this chord, but what else to play *instead* of it while the rhythm section
+/// holds it down.
+pub fn scale_of(subject: Chord) -> Scale {
+  scale.Scale(subject.root, case chord.chord_scales(subject) {
+    [first, ..] -> first
+    // Nothing reaches this: every chord has a scale. A dominant is the one
+    // to guess with if one ever does.
+    [] -> scale.Mixolydian
+  })
+}
+
 // --- The shapes each flavour is made of --------------------------------------
 
 /// The chord shapes to try, most idiomatic first. Anything the scale cannot

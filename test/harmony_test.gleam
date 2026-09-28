@@ -3,6 +3,8 @@ import gleam/list
 import gleam/string
 import jazz/chord
 import jazz/harmony
+import jazz/instrument
+import jazz/notation
 import jazz/pitch.{type PitchClass, A, C, D, E, F, G, PitchClass}
 import jazz/progression
 import jazz/scale.{type ScaleKind}
@@ -196,4 +198,118 @@ pub fn every_flavour_can_be_asked_for_by_name_test() {
   assert harmony.flavour_from_string(" Extended ") == Ok(harmony.Extended)
   assert harmony.flavour_from_string("sevenths") == Ok(harmony.Sevenths)
   let assert Error(_) = harmony.flavour_from_string("ninths and things")
+}
+
+// --- Over a chord ------------------------------------------------------------
+
+fn over(symbol: String, flavour: harmony.Flavour) -> String {
+  let assert Ok(one) = chord.parse(symbol)
+  harmony.chords(harmony.scale_of(one), flavour)
+  |> list.map(chord.to_string)
+  |> string.join(" ")
+}
+
+pub fn a_chord_is_harmonised_from_the_scale_it_is_played_on_test() {
+  // The first scale the chord view recommends, and the chord's own root.
+  let assert Ok(one) = chord.parse("Bb7#9")
+  assert harmony.scale_of(one).kind == scale.DiminishedHalfWhole
+  assert pitch.class_to_string(harmony.scale_of(one).root) == "Bb"
+}
+
+pub fn the_upper_structures_of_an_altered_dominant_test() {
+  // The triads every player reaches for over C7alt: the ones on the flat
+  // sixth and the flat fifth, which is the sound of the chord.
+  let found = over("C7alt", harmony.Triads)
+  assert string.contains(found, "Ab ")
+  assert string.contains(found, "Gb ")
+  // And the plain major triad on the root is not among them, because the
+  // scale has no natural fifth to put in it.
+  assert !string.contains(found, " C ")
+}
+
+pub fn everything_offered_over_a_chord_fits_the_chord_scale_test() {
+  // The claim the readout makes -- play any of them and the rhythm section is
+  // still playing the chord -- is that they are all inside its scale.
+  list.each(
+    ["Cmaj7", "Dm7", "G13", "F#m7b5", "Ebdim7", "A7b9", "Bbm(maj7)"],
+    fn(symbol) {
+      let assert Ok(one) = chord.parse(symbol)
+      let over = harmony.scale_of(one)
+      let tones = scale.notes(over) |> list.map(pitch.class_semitones)
+      list.each(harmony.all_flavours(), fn(flavour) {
+        list.each(harmony.chords(over, flavour), fn(found) {
+          list.each(chord.notes(found), fn(note) {
+            assert list.contains(tones, pitch.class_semitones(note))
+          })
+        })
+      })
+    },
+  )
+}
+
+// --- Written out to play -----------------------------------------------------
+
+fn chart(
+  kind: ScaleKind,
+  flavour: harmony.Flavour,
+  player: instrument.Instrument,
+) {
+  notation.from_chords(
+    harmony.as_progression(scale.Scale(c(C), kind), flavour),
+    player,
+    120,
+  )
+}
+
+pub fn the_chords_are_written_out_a_bar_each_test() {
+  let score = chart(scale.Ionian, harmony.Sevenths, instrument.concert())
+  // Seven chords, seven bars, and every bar full.
+  assert list.length(notation.only_part(score).measures) == 7
+  list.each(notation.only_part(score).measures, fn(bar) {
+    assert notation.sounding(bar.events) == 8
+  })
+  // Four notes a chord, going up, with the rest of the bar left to breathe.
+  assert list.length(notation.pitches(score)) == 7 * 4
+}
+
+pub fn the_chart_climbs_rather_than_wrapping_round_test() {
+  // The roots run up the scale. Built from the root of each chord in turn,
+  // the octave never drops back for the sake of it: without this the last
+  // chord of a mode falls a seventh, exactly where nobody expects it.
+  let score = chart(scale.Dorian, harmony.Sevenths, instrument.concert())
+  let roots =
+    notation.only_part(score).measures
+    |> list.filter_map(fn(bar) {
+      case bar.events {
+        [notation.Note(note, ..), ..] -> Ok(pitch.to_midi(note))
+        _ -> Error(Nil)
+      }
+    })
+  assert roots == list.sort(roots, int.compare)
+}
+
+pub fn what_is_written_is_what_the_horn_can_play_test() {
+  // A part that goes off the end of the instrument is not a part. The tallest
+  // chords reach the top note and no further; anything worse than a semitone
+  // over means the octave is being chosen badly.
+  list.each([instrument.alto_sax(), instrument.tenor_sax()], fn(player) {
+    list.each(scale.all_kinds(), fn(kind) {
+      list.each(harmony.all_flavours(), fn(flavour) {
+        let notes = notation.pitches(chart(kind, flavour, player))
+        let over =
+          list.filter(notes, fn(one) { !instrument.in_range(player, one) })
+        assert list.length(over) * 20 <= list.length(notes)
+        list.each(over, fn(one) {
+          assert pitch.to_midi(one) - pitch.to_midi(player.highest_written) <= 1
+          assert pitch.to_midi(player.lowest_written) - pitch.to_midi(one) <= 1
+        })
+      })
+    })
+  })
+}
+
+pub fn a_scale_that_carries_nothing_still_draws_a_bar_test() {
+  let score = chart(scale.Blues, harmony.Extended, instrument.concert())
+  assert list.length(notation.only_part(score).measures) == 1
+  assert notation.pitches(score) == []
 }

@@ -178,12 +178,11 @@ pub fn harmony_view(
 ) -> String {
   let shift = instrument.write_interval_for_key(instrument, subject.root)
   let written_root = interval.transpose_class(subject.root, shift)
-  let transposing = !instrument.is_concert(instrument)
 
-  let heading = case transposing {
-    False ->
-      pitch.class_to_string(subject.root) <> " " <> scale.name(subject.kind)
+  let heading = case instrument.is_concert(instrument) {
     True ->
+      pitch.class_to_string(subject.root) <> " " <> scale.name(subject.kind)
+    False ->
       pitch.class_to_string(written_root)
       <> " "
       <> scale.name(subject.kind)
@@ -191,6 +190,84 @@ pub fn harmony_view(
       <> pitch.class_to_string(subject.root)
       <> ")"
   }
+
+  string.join(
+    list.flatten([
+      [
+        title(heading, instrument),
+        "",
+        indent <> harmony.name(flavour) <> ".  " <> harmony.usage(flavour),
+        "",
+      ],
+      harmony_table(subject, flavour, instrument),
+    ]),
+    "\n",
+  )
+}
+
+/// And the same table over a chord, from the scale the chord is played on.
+///
+/// The chord view already says which scales fit; this says what is in the
+/// first of them. Everything listed can be played while the rhythm section
+/// holds the chord down, which is what an upper structure is.
+pub fn chord_harmony_view(
+  subject: Chord,
+  flavour: Flavour,
+  instrument: Instrument,
+) -> String {
+  let shift = instrument.write_interval_for_key(instrument, subject.root)
+  let written_chord = chord.transpose(subject, shift)
+  let over = harmony.scale_of(subject)
+
+  let heading = case instrument.is_concert(instrument) {
+    True -> chord.to_string(subject)
+    False ->
+      chord.to_string(written_chord)
+      <> "  (concert "
+      <> chord.to_string(subject)
+      <> ")"
+  }
+
+  let source =
+    pitch.class_to_string(interval.transpose_class(subject.root, shift))
+    <> " "
+    <> scale.name(over.kind)
+
+  string.join(
+    list.flatten([
+      [
+        title(heading, instrument),
+        "",
+        indent
+          <> harmony.name(flavour)
+          <> " from "
+          <> source
+          <> ", the scale that fits it best.",
+        "",
+      ],
+      harmony_table(over, flavour, instrument),
+      [
+        "",
+        indent
+          <> "Play any of them and the rhythm section is still playing "
+          <> chord.to_string(written_chord)
+          <> ".",
+      ],
+    ]),
+    "\n",
+  )
+}
+
+/// One row a chord: where it sits in the scale, what it is called, and what
+/// is in it. The concert column only earns its place on a horn that reads in
+/// another key.
+fn harmony_table(
+  subject: Scale,
+  flavour: Flavour,
+  instrument: Instrument,
+) -> List(String) {
+  let shift = instrument.write_interval_for_key(instrument, subject.root)
+  let transposing = !instrument.is_concert(instrument)
 
   let rows =
     harmony.chords(subject, flavour)
@@ -207,7 +284,7 @@ pub fn harmony_view(
       )
     })
 
-  let body = case rows {
+  case rows {
     [] -> [
       indent
       <> "Nothing here carries "
@@ -234,19 +311,6 @@ pub fn harmony_view(
       })
     }
   }
-
-  string.join(
-    list.flatten([
-      [
-        title(heading, instrument),
-        "",
-        indent <> harmony.name(flavour) <> ".  " <> harmony.usage(flavour),
-        "",
-      ],
-      body,
-    ]),
-    "\n",
-  )
 }
 
 fn width(cells: List(String)) -> Int {

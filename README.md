@@ -120,9 +120,60 @@ on several notes of the scale and is the same chord each time, so it is listed
 once, spelled the way that needs the fewest accidentals: `Bdim7` rather than
 the `Abdim7` that would have to be written `Ab Cb Ebb Gbb`.
 
-`--all-keys` runs the whole thing round the cycle, and with `--format abc` or
-`--format musicxml` it comes out as a chart to read and play against rather
-than a table to look at.
+The chord view takes the same flag, and answers the question a soloist
+actually asks with a chord in front of them: what else can I play while the
+rhythm section holds this down. It harmonises whichever scale fits the chord
+best, so the degree column is the upper structure by its usual name — play the
+flat sixth triad over an altered dominant and everybody knows what you meant:
+
+```
+$ gleam run -- chord C7alt --chords triads
+
+  C7alt  --  Concert pitch
+
+  Triads from C Altered (super Locrian), the scale that fits it best.
+
+  Degree  Chord  Notes
+  i       Cdim   C  Eb  Gb
+  I       Caug   C  E  G#
+  bii     Dbm    Db  Fb  Ab
+  biii    Ebm    Eb  Gb  Bb
+  bV      Gb     Gb  Bb  Db
+  bVI     Ab     Ab  C  Eb
+  bvii    Bbdim  Bb  Db  Fb
+
+  Play any of them and the rhythm section is still playing C7alt.
+```
+
+With `--format abc` or `--format musicxml` the list stops being a table and
+becomes a part. A horn plays one note at a time, so a chord it can read is an
+arpeggio: a bar each, the chord tones going up, and a rest for the remainder
+of the bar to look at the next one.
+
+```
+$ gleam run -- scale D dorian --chords sevenths --for tenor --format abc
+
+X:1
+T:Sevenths from Dorian in E
+T:Tenor sax (Bb)
+M:4/4
+L:1/8
+Q:1/4=120
+K:D
+"Em7"EGBd z4 | "F#m7"FAce z4 | "Gmaj7"GBdf z4 | "A7"Aceg z4 |
+"Bm7"Bdfa z4 | "C#m7b5"cegb z4 | "Dmaj7"dfac' z4 |]
+```
+
+The chart climbs: each chord starts at or above the one before it, so it runs
+up the scale instead of dropping a seventh at the end where the roots come
+round. Climbing runs out of horn eventually, and a note the player cannot
+reach is worse than a leap, so a chord that would go off the top starts again
+an octave down — which is how the exercise is played across the instrument
+anyway.
+
+`--all-keys` runs either of them round the cycle. There the chords stay
+symbols over empty bars: ninety-odd bars of written-out arpeggios is neither
+readable nor much use, and a chart of the changes in twelve keys is.
 
 ### Progressions
 
@@ -419,10 +470,12 @@ python3 -m http.server 8137 --directory dist
 Then open <http://127.0.0.1:8137>. Five views over the same theory — scales,
 chords, changes, generated lines, analysis — each showing engraved notation
 above the text the command line prints, for whichever horn is selected. A
-**Pattern** picker makes an exercise out of a scale or a chord, **Keys** takes
-whichever of those, or a whole lick, round the cycle of fourths, and **Seed**
-is the number that made a line, so one you liked is never more than a typed
-number away. The
+**Pattern** picker makes an exercise out of a scale or a chord, **Chords**
+turns either into the chords that go with it instead — written out as a part
+to play in one key, and left as a chart of symbols round the cycle — **Keys**
+takes whichever of those, or a whole lick, round the cycle of fourths, and
+**Seed** is the number that made a line, so one you liked is never more than a
+typed number away. The
 notation is drawn by [abcjs](https://www.abcjs.net/) from the same ABC the CLI
 emits, and the **Play** button plays it back, which is the thing a terminal
 cannot do and the reason the browser was worth the trouble.

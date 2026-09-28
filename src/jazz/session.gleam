@@ -21,7 +21,7 @@ import jazz/interval
 import jazz/lick.{type Level}
 import jazz/notation
 import jazz/pattern.{type Arpeggio, type Pattern}
-import jazz/pitch.{type PitchClass}
+import jazz/pitch.{type PitchClass, Pitch}
 import jazz/progression.{type Progression}
 import jazz/render/abc
 import jazz/render/musicxml
@@ -394,14 +394,7 @@ fn showing(session: Session) -> Result(#(String, notation.Score), String) {
             subjects
               |> list.map(text.harmony_view(_, flavour, session.player))
               |> string.join("\n\n"),
-            marked(
-              session,
-              notation.from_progressions(
-                list.map(subjects, harmony.as_progression(_, flavour)),
-                session.player,
-                session.tempo,
-              ),
-            ),
+            marked(session, chart(session, subjects, flavour)),
           ))
         }
         None ->
@@ -429,19 +422,46 @@ fn showing(session: Session) -> Result(#(String, notation.Score), String) {
             False -> [subject.root]
             True -> progression.cycle_of_fourths(subject.root)
           }
-          Ok(#(
-            text.chord_view(subject, session.arpeggio, keys, session.player),
-            marked(
-              session,
-              notation.from_arpeggio(
-                subject,
-                session.arpeggio,
-                keys,
-                session.player,
-                session.tempo,
-              ),
-            ),
-          ))
+          case session.flavour {
+            // What else can be played while the rhythm section holds this
+            // chord down: the chords of whichever scale it is played on.
+            Some(flavour) -> {
+              let subjects =
+                list.map(keys, fn(key) {
+                  chord.transpose(
+                    subject,
+                    interval.between(Pitch(subject.root, 4), Pitch(key, 4)),
+                  )
+                })
+              Ok(#(
+                subjects
+                  |> list.map(text.chord_harmony_view(
+                    _,
+                    flavour,
+                    session.player,
+                  ))
+                  |> string.join("\n\n"),
+                marked(
+                  session,
+                  chart(session, list.map(subjects, harmony.scale_of), flavour),
+                ),
+              ))
+            }
+            None ->
+              Ok(#(
+                text.chord_view(subject, session.arpeggio, keys, session.player),
+                marked(
+                  session,
+                  notation.from_arpeggio(
+                    subject,
+                    session.arpeggio,
+                    keys,
+                    session.player,
+                    session.tempo,
+                  ),
+                ),
+              ))
+          }
         }
       }
 
@@ -513,6 +533,33 @@ fn showing(session: Session) -> Result(#(String, notation.Score), String) {
             ),
           ))
       }
+  }
+}
+
+/// The chords of these scales, as a score.
+///
+/// In one key they are written out as notes, because the point of putting a
+/// horn part on the screen is to play it. Round the cycle that would be a
+/// hundred bars of arpeggios, so it stays a chart of symbols: still something
+/// to read and to play against, and short enough to take in.
+fn chart(
+  session: Session,
+  subjects: List(scale.Scale),
+  flavour: Flavour,
+) -> notation.Score {
+  case subjects {
+    [only] ->
+      notation.from_chords(
+        harmony.as_progression(only, flavour),
+        session.player,
+        session.tempo,
+      )
+    many ->
+      notation.from_progressions(
+        list.map(many, harmony.as_progression(_, flavour)),
+        session.player,
+        session.tempo,
+      )
   }
 }
 
@@ -595,10 +642,13 @@ pub fn uses_key(session: Session) -> Bool {
 /// that is not a flavour would do; this is the one that reads.
 pub const plain = "none"
 
-/// Whether the scale view is showing chords rather than an exercise, which is
-/// what decides whether a pattern picker has anything to say.
+/// Whether the view is showing chords rather than an exercise to play, which
+/// is what decides whether a pattern picker has anything left to say.
 pub fn showing_chords(session: Session) -> Bool {
-  session.view == ScaleView && session.flavour != None
+  case session.view {
+    ScaleView | ChordView -> session.flavour != None
+    _ -> False
+  }
 }
 
 /// Whether the current view is generated, and so can be asked for another.

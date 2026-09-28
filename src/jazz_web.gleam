@@ -21,6 +21,7 @@ import lustre/attribute
 import lustre/effect.{type Effect}
 import lustre/element.{type Element}
 import lustre/element/html
+import lustre/element/keyed
 import lustre/event
 
 pub type Model {
@@ -169,42 +170,58 @@ fn tabs(model: Model) -> Element(Msg) {
   )
 }
 
+/// Every control is named, and stays the element it was named as.
+///
+/// The list changes shape from view to view and even within one -- the
+/// pattern picker steps aside once the scale is being harmonised rather than
+/// played -- and without a name the browser matches them up by position. A
+/// `<select>` re-used that way keeps whichever option was showing, so the
+/// picker ends up displaying one thing and meaning another.
 fn controls(model: Model) -> Element(Msg) {
-  let shared = [instruments(model), tempos(model)]
+  let shared = [
+    #("instrument", instruments(model)),
+    #("tempo", tempos(model)),
+  ]
   let particular = case model.session.view {
-    // The pattern picker has nothing to say once the scale is being
-    // harmonised rather than played, so it gives up its place.
     session.ScaleView ->
       list.flatten([
-        [keys(model), scales(model)],
+        [#("key", keys(model)), #("scale", scales(model))],
         case session.showing_chords(model.session) {
           True -> []
-          False -> [patterns(model)]
+          False -> [#("pattern", patterns(model))]
         },
-        [flavours(model), all_keys(model)],
+        [#("flavour", flavours(model)), #("round", all_keys(model))],
       ])
-    session.ChordView -> [chord_box(model), arpeggios(model), all_keys(model)]
+    session.ChordView ->
+      list.flatten([
+        [#("chord", chord_box(model))],
+        case session.showing_chords(model.session) {
+          True -> []
+          False -> [#("arpeggio", arpeggios(model))]
+        },
+        [#("flavour", flavours(model)), #("round", all_keys(model))],
+      ])
     session.ProgressionView -> source(model, [])
     session.LineView ->
       case session.generating_tune(model.session) {
         True ->
           source(model, [
-            all_keys(model),
-            seed_box(model),
-            tune_seed_box(model),
-            again(),
+            #("round", all_keys(model)),
+            #("seed", seed_box(model)),
+            #("tune-seed", tune_seed_box(model)),
+            #("again", again()),
           ])
         False ->
           source(model, [
-            levels(model),
-            all_keys(model),
-            seed_box(model),
-            again(),
+            #("level", levels(model)),
+            #("round", all_keys(model)),
+            #("seed", seed_box(model)),
+            #("again", again()),
           ])
       }
     session.AnalysisView -> source(model, [])
   }
-  html.div([attribute.class("controls")], list.append(shared, particular))
+  keyed.div([attribute.class("controls")], list.append(shared, particular))
 }
 
 fn instruments(model: Model) -> Element(Msg) {
@@ -386,20 +403,23 @@ fn all_keys(model: Model) -> Element(Msg) {
 
 /// Where the changes come from. Typed ones carry their own key, so the key
 /// picker steps aside for the box.
-fn source(model: Model, rest: List(Element(Msg))) -> List(Element(Msg)) {
+fn source(
+  model: Model,
+  rest: List(#(String, Element(Msg))),
+) -> List(#(String, Element(Msg))) {
   let picked = case
     session.typing_changes(model.session),
     session.generating_tune(model.session)
   {
-    True, _ -> [changes(model), changes_box(model)]
+    True, _ -> [#("changes", changes(model)), #("typed", changes_box(model))]
     _, True -> [
-      keys(model),
-      changes(model),
-      bars(model),
-      levels(model),
-      fresh_tune(),
+      #("key", keys(model)),
+      #("changes", changes(model)),
+      #("bars", bars(model)),
+      #("level", levels(model)),
+      #("fresh", fresh_tune()),
     ]
-    _, _ -> [keys(model), changes(model)]
+    _, _ -> [#("key", keys(model)), #("changes", changes(model))]
   }
   list.append(picked, rest)
 }

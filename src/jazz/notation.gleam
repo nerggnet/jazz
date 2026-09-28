@@ -665,6 +665,153 @@ pub fn from_progressions(
   )
 }
 
+/// The same chart with the chords written out rather than only named, so the
+/// part can be played instead of only read.
+///
+/// A horn plays one note at a time, so a chord it can read is an arpeggio: a
+/// bar each, the chord tones going up as eighths, and a rest for whatever is
+/// left of the bar. The whole chart is dropped into one octave together
+/// rather than each chord into its own, so it reads as a line instead of
+/// jumping about.
+pub fn from_chords(
+  subject: Progression,
+  player: Instrument,
+  tempo: Int,
+) -> Score {
+  let #(written_key, signature, measures) =
+    spelled(subject.key, player, True, fn(shift) {
+      played(progression.chords(subject), shift, player)
+    })
+
+  Score(
+    title: subject.name <> " in " <> pitch.class_to_string(written_key),
+    subtitle: instrument.label(player),
+    time: #(4, 4),
+    unit: 8,
+    tempo: Some(tempo),
+    feel: None,
+    parts: [
+      reading(
+        settle(
+          measures,
+          signature,
+          Treble,
+          instrument.label(player),
+          instrument.sound(player),
+        ),
+        instrument.write_interval_for_key(player, subject.key),
+      ),
+    ],
+  )
+}
+
+/// Every chord as notes, a bar each.
+fn played(
+  chords: List(Chord),
+  shift: Interval,
+  player: Instrument,
+) -> List(Event) {
+  let capacity = 8
+  let written = list.map(chords, chord.transpose(_, shift))
+
+  case list.zip(written, climbing(written, None, player, [])) {
+    // A scale that carries none of them still has to draw a bar.
+    [] -> [Spacer(capacity, None, None)]
+    pairs ->
+      list.flat_map(pairs, fn(pair) {
+        let #(one, notes) = pair
+        let symbol = chord.to_string(one)
+        let placed = list.take(notes, capacity)
+        list.append(
+          list.index_map(placed, fn(note, at) {
+            Note(
+              note,
+              1,
+              None,
+              case at {
+                0 -> Some(symbol)
+                _ -> None
+              },
+              None,
+              Alone,
+              False,
+              plainly,
+            )
+          }),
+          case capacity - list.length(placed) {
+            left if left > 0 -> [Rest(left, None, None)]
+            _ -> []
+          },
+        )
+      })
+  }
+}
+
+/// Where each chord sits on the staff: at or above the one before it, so the
+/// chart climbs the scale rather than dropping an octave wherever the roots
+/// wrap round the top of it.
+///
+/// Climbing runs out of horn eventually, and a note the player cannot reach
+/// is worse than a leap, so a chord that would go off the top starts again an
+/// octave down -- which is how the exercise is played across the instrument
+/// anyway.
+fn climbing(
+  chords: List(Chord),
+  floor: Option(Pitch),
+  player: Instrument,
+  acc: List(List(Pitch)),
+) -> List(List(Pitch)) {
+  case chords {
+    [] -> list.reverse(acc)
+    [one, ..rest] -> {
+      let notes = placed(one, floor, player)
+      climbing(rest, list.first(notes) |> option.from_result, player, [
+        notes,
+        ..acc
+      ])
+    }
+  }
+}
+
+fn placed(one: Chord, floor: Option(Pitch), player: Instrument) -> List(Pitch) {
+  let from = fn(root) {
+    list.map(chord.intervals(one), interval.transpose(root, _))
+  }
+  let home = Pitch(one.root, 4)
+  case floor {
+    // Nothing to follow: put it where most of it is playable.
+    None ->
+      from(interval.transpose(
+        home,
+        interval.octaves(reachable(from(home), player)),
+      ))
+    // Keep climbing while the horn has the notes, and start again an octave
+    // down when it does not: whichever of the two puts more of the chord
+    // under the player's fingers, and the climb when they are level.
+    Some(under) -> {
+      let climbed = lift(home, under)
+      let up = from(climbed)
+      let again = from(interval.transpose(climbed, interval.octaves(-1)))
+      case playable(again, player) > playable(up, player) {
+        True -> again
+        False -> up
+      }
+    }
+  }
+}
+
+fn playable(notes: List(Pitch), player: Instrument) -> Int {
+  list.count(notes, instrument.in_range(player, _))
+}
+
+/// Raise a note by octaves until it is no lower than the one before it.
+fn lift(note: Pitch, under: Pitch) -> Pitch {
+  case pitch.to_midi(note) < pitch.to_midi(under) {
+    True -> lift(interval.transpose(note, interval.octaves(1)), under)
+    False -> note
+  }
+}
+
 /// One bar to a bar, carrying symbols and no printed notes.
 fn chart(moved: Progression) -> List(Measure) {
   let capacity = 8

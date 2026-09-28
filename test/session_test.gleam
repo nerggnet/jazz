@@ -518,3 +518,37 @@ pub fn chords_round_the_keys_are_one_chart_test() {
   // And the readout says what to play in each of them.
   assert list.length(string.split(text_of(round), "Triads.")) == 13
 }
+
+pub fn the_chord_view_can_show_chords_too_test() {
+  let subject =
+    session.update(
+      showing(session.ChordView),
+      session.ChooseFlavourNamed("triads"),
+    )
+  assert session.showing_chords(subject)
+  // The default chord is a concert Bb7#9, played on the half-whole diminished
+  // scale, and every triad in that scale is something to play over it.
+  let readout = text_of(subject)
+  assert string.contains(readout, "the scale that fits it best")
+  // The alto reads it as G7#9, and is told so in its own key.
+  assert string.contains(readout, "G Diminished (half-whole)")
+  assert string.contains(readout, "still playing G7#9")
+  assert string.contains(readout, "(concert Bb7#9)")
+}
+
+pub fn the_flavour_is_remembered_across_the_views_test() {
+  // One picker, one answer: choosing sevenths on the scale tab and then
+  // looking at a chord shows sevenths there too.
+  let chosen =
+    session.update(session.new(), session.ChooseFlavourNamed("sevenths"))
+  assert session.showing_chords(chosen)
+  assert session.showing_chords(session.update(
+    chosen,
+    session.ChooseView(session.ChordView),
+  ))
+  // But it has nothing to say about the other three.
+  assert !session.showing_chords(session.update(
+    chosen,
+    session.ChooseView(session.LineView),
+  ))
+}

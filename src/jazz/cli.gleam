@@ -14,10 +14,11 @@ import gleam/string
 import jazz/chord
 import jazz/harmony.{type Flavour}
 import jazz/instrument.{type Instrument}
+import jazz/interval
 import jazz/lick
 import jazz/notation
 import jazz/pattern.{type Arpeggio, type Pattern}
-import jazz/pitch.{type PitchClass}
+import jazz/pitch.{type PitchClass, Pitch}
 import jazz/progression.{type Progression}
 import jazz/render/abc
 import jazz/render/musicxml
@@ -141,17 +142,63 @@ fn harmonised(
       subjects
       |> list.map(text.harmony_view(_, flavour, player))
       |> string.join("\n\n")
+    // In one key the chords are written out to play; round the cycle that
+    // would be a hundred bars of arpeggios, so the chart stays a chart.
     Abc ->
-      subjects
-      |> list.map(harmony.as_progression(_, flavour))
-      |> list.map(notation.from_progression(_, player, beats))
-      |> abc.render_book
+      case subjects {
+        [only] ->
+          abc.render(notation.from_chords(
+            harmony.as_progression(only, flavour),
+            player,
+            beats,
+          ))
+        many ->
+          many
+          |> list.map(harmony.as_progression(_, flavour))
+          |> list.map(notation.from_progression(_, player, beats))
+          |> abc.render_book
+      }
     MusicXml ->
-      musicxml.render(notation.from_progressions(
-        list.map(subjects, harmony.as_progression(_, flavour)),
+      musicxml.render(case subjects {
+        [only] ->
+          notation.from_chords(
+            harmony.as_progression(only, flavour),
+            player,
+            beats,
+          )
+        many ->
+          notation.from_progressions(
+            list.map(many, harmony.as_progression(_, flavour)),
+            player,
+            beats,
+          )
+      })
+  }
+}
+
+/// The same, over a chord rather than over a scale: the chords of whichever
+/// scale the chord is played on, which is what can be played on top of it
+/// while the rhythm section holds it down.
+fn harmonised_over(
+  subjects: List(chord.Chord),
+  flavour: Flavour,
+  player: Instrument,
+  format: Format,
+  beats: Int,
+) -> String {
+  case format {
+    Text ->
+      subjects
+      |> list.map(text.chord_harmony_view(_, flavour, player))
+      |> string.join("\n\n")
+    _ ->
+      harmonised(
+        list.map(subjects, harmony.scale_of),
+        flavour,
         player,
+        format,
         beats,
-      ))
+      )
   }
 }
 
@@ -161,6 +208,7 @@ fn chord_command(args: List(String)) -> Result(String, String) {
   use format <- result.try(format_option(options))
   use beats <- result.try(tempo_option(options))
   use shape <- result.try(arpeggio_option(options))
+  use flavour <- result.try(flavour_option(options))
   case options.positional {
     [symbol] -> {
       use parsed <- result.try(chord.parse(symbol))
@@ -168,16 +216,34 @@ fn chord_command(args: List(String)) -> Result(String, String) {
         Some(_) -> keys(parsed.root, flag(options, "cycle"))
         None -> [parsed.root]
       }
-      let score = notation.from_arpeggio(parsed, shape, round, player, beats)
-      Ok(case format {
-        Text -> text.chord_view(parsed, shape, round, player)
-        Abc -> abc.render(score)
-        MusicXml -> musicxml.render(score)
+      Ok(case flavour {
+        Some(chosen) ->
+          harmonised_over(
+            list.map(round, fn(key) {
+              chord.transpose(
+                parsed,
+                interval.between(Pitch(parsed.root, 4), Pitch(key, 4)),
+              )
+            }),
+            chosen,
+            player,
+            format,
+            beats,
+          )
+        None -> {
+          let score =
+            notation.from_arpeggio(parsed, shape, round, player, beats)
+          case format {
+            Text -> text.chord_view(parsed, shape, round, player)
+            Abc -> abc.render(score)
+            MusicXml -> musicxml.render(score)
+          }
+        }
       })
     }
     _ ->
       Error(
-        "usage: jazz chord <symbol> [--for <instrument>] [--pattern <pattern>]",
+        "usage: jazz chord <symbol> [--for <instrument>] [--pattern <pattern>] [--chords <flavour>]",
       )
   }
 }
@@ -594,8 +660,9 @@ OPTIONS
   --pattern <pattern>      scales: straight (default), thirds, fourths,
                            triads, sevenths, digital; chords: up-and-down
                            (default), inversions, from-the-top, threes
-  --chords <flavour>       scales: the chords the scale carries, as triads,
-                           sevenths, sixths, extended or suspended
+  --chords <flavour>       the chords a scale carries, or the ones that fit
+                           over a chord: triads, sevenths, sixths, extended
+                           or suspended
   --level <level>          beginner (default), intermediate, or advanced
   --seed <n>               Pick a different line; the same seed always repeats
   --format <format>        text (default), abc, or musicxml
@@ -611,6 +678,7 @@ EXAMPLES
   jazz scale D dorian --chords sevenths
   jazz scale C melodic-minor --chords extended --for tenor
   jazz chord Bb7#9 --for tenor
+  jazz chord Bb7#9 --chords triads --for tenor
   jazz chord Cmaj7 --for alto --pattern inversions --all-keys
   jazz progression ii-V-I --key F --for alto
   jazz progression blues --key Bb --for tenor
